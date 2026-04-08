@@ -1,91 +1,23 @@
 <script setup>
 import { ref } from "vue";
 import { useOrdersStore } from "../stores/orders";
+import { useCurrency, useDateTime } from "../composables/useFormatters";
+import AppNavbar from "./AppNavbar.vue";
 
 const ordersStore = useOrdersStore();
+const { formatCurrency } = useCurrency();
+const { formatDateTime } = useDateTime();
 const expandedOrderId = ref(null);
-
-const emit = defineEmits(["navigate"]);
-
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatCurrency(value) {
-  return currencyFormatter.format(value);
-}
-
-function formatDateTime(isoString) {
-  const date = new Date(isoString);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function toggleOrderDetail(orderNumber) {
   expandedOrderId.value =
     expandedOrderId.value === orderNumber ? null : orderNumber;
 }
-
-function goBackToPOS() {
-  emit("navigate", "pos");
-}
 </script>
 
 <template>
   <div class="min-h-screen bg-slate-50">
-    <!-- Top Navbar -->
-    <header class="bg-white border-b border-slate-200 shadow-sm">
-      <div
-        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
-      >
-        <div class="flex items-center gap-3">
-          <div
-            class="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-600"
-          >
-            <svg
-              class="w-5 h-5 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
-          <h1 class="text-lg font-bold text-slate-800">Mini POS</h1>
-        </div>
-
-        <button
-          class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all"
-          @click="goBackToPOS"
-        >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-          Back to POS
-        </button>
-      </div>
-    </header>
+    <AppNavbar show-back />
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

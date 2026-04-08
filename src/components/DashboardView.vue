@@ -1,22 +1,12 @@
 <script setup>
 import { ref } from "vue";
-import { useAuthStore } from "../stores/auth";
 import { usePosStore } from "../stores/pos";
+import { useCurrency } from "../composables/useFormatters";
+import AppNavbar from "./AppNavbar.vue";
 
-const authStore = useAuthStore();
 const posStore = usePosStore();
+const { formatCurrency } = useCurrency();
 const checkoutNotice = ref(null);
-
-const emit = defineEmits(["navigate"]);
-
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatCurrency(value) {
-  return currencyFormatter.format(value);
-}
 
 function addProductToCart(product) {
   posStore.addToCart(product);
@@ -38,80 +28,7 @@ function checkoutSale() {
 
 <template>
   <div class="min-h-screen bg-slate-50">
-    <!-- Top Navbar -->
-    <header class="bg-white border-b border-slate-200 shadow-sm">
-      <div
-        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
-      >
-        <div class="flex items-center gap-3">
-          <div
-            class="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-600"
-          >
-            <svg
-              class="w-5 h-5 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
-          <h1 class="text-lg font-bold text-slate-800">Mini POS</h1>
-        </div>
-
-        <div class="flex items-center gap-4">
-          <span class="text-sm text-slate-600">
-            Welcome,
-            <span class="font-medium text-slate-800">{{
-              authStore.displayName
-            }}</span>
-          </span>
-          <button
-            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all"
-            @click="emit('navigate', 'orders')"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-              />
-            </svg>
-            Orders
-          </button>
-          <button
-            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-all"
-            @click="authStore.logout()"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            Logout
-          </button>
-        </div>
-      </div>
-    </header>
+    <AppNavbar />
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

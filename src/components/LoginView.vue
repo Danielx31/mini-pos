@@ -1,7 +1,10 @@
 <script setup>
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { ROUTE_NAMES } from "../constants/routes";
 
+const router = useRouter();
 const authStore = useAuthStore();
 
 const username = ref("");
@@ -12,7 +15,10 @@ const showPassword = ref(false);
 async function handleLogin() {
   isLoading.value = true;
   try {
-    authStore.login(username.value.trim(), password.value);
+    const success = authStore.login(username.value.trim(), password.value);
+    if (success) {
+      router.push({ name: ROUTE_NAMES.POS });
+    }
   } finally {
     isLoading.value = false;
   }
