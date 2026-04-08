@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { useOrdersStore } from "./orders";
 
 const TAX_RATE = 0.08;
 
@@ -122,6 +123,9 @@ export const usePosStore = defineStore("pos", () => {
     };
 
     clearCart();
+
+    const ordersStore = useOrdersStore();
+    ordersStore.addOrder(orderSummary);
 
     return {
       ok: true,
