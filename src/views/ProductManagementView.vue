@@ -2,7 +2,7 @@
 import { ref, computed } from "vue";
 import { useProductsStore } from "../stores/products";
 import { useCurrency } from "../composables/useFormatters";
-import AppNavbar from "./AppNavbar.vue";
+import AppNavbar from "../components/AppNavbar.vue";
 
 const productsStore = useProductsStore();
 const { formatCurrency } = useCurrency();

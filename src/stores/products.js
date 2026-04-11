@@ -1,18 +1,8 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { DEFAULT_PRODUCTS } from "../data/products";
 
 const STORAGE_KEY = "mini_pos_products";
-
-const DEFAULT_CATALOG = [
-  { id: "p-001", name: "Bottled Water", category: "Drinks", price: 1.0 },
-  { id: "p-002", name: "Sparkling Soda", category: "Drinks", price: 1.75 },
-  { id: "p-003", name: "Classic Burger", category: "Food", price: 5.5 },
-  { id: "p-004", name: "Chicken Sandwich", category: "Food", price: 6.25 },
-  { id: "p-005", name: "French Fries", category: "Sides", price: 2.5 },
-  { id: "p-006", name: "Garden Salad", category: "Sides", price: 3.75 },
-  { id: "p-007", name: "Chocolate Bar", category: "Snacks", price: 1.25 },
-  { id: "p-008", name: "Fresh Coffee", category: "Drinks", price: 2.25 },
-];
 
 export const useProductsStore = defineStore("products", () => {
   const products = ref(loadProductsFromStorage());
@@ -27,9 +17,9 @@ export const useProductsStore = defineStore("products", () => {
   function loadProductsFromStorage() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [...DEFAULT_CATALOG];
+      return stored ? JSON.parse(stored) : [...DEFAULT_PRODUCTS];
     } catch {
-      return [...DEFAULT_CATALOG];
+      return [...DEFAULT_PRODUCTS];
     }
   }
 
@@ -113,7 +103,7 @@ export const useProductsStore = defineStore("products", () => {
   }
 
   function resetToDefaults() {
-    products.value = [...DEFAULT_CATALOG];
+    products.value = [...DEFAULT_PRODUCTS];
     saveProductsToStorage();
     return { ok: true, message: "Product catalog reset to defaults." };
   }

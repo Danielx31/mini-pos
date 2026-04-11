@@ -3,8 +3,7 @@ import { defineStore } from "pinia";
 import { useOrdersStore } from "./orders";
 import { useProductsStore } from "./products";
 import { useCouponsStore } from "./coupons";
-
-const TAX_RATE = 0.08;
+import { TAX_RATE } from "../constants/routes";
 
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");

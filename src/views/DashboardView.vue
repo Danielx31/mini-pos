@@ -3,7 +3,7 @@ import { ref } from "vue";
 import { usePosStore } from "../stores/pos";
 import { useCouponsStore } from "../stores/coupons";
 import { useCurrency } from "../composables/useFormatters";
-import AppNavbar from "./AppNavbar.vue";
+import AppNavbar from "../components/AppNavbar.vue";
 
 const posStore = usePosStore();
 const couponsStore = useCouponsStore();

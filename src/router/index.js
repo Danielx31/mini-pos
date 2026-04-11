@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
-import LoginView from "../components/LoginView.vue";
-import DashboardView from "../components/DashboardView.vue";
-import OrderHistoryView from "../components/OrderHistoryView.vue";
-import ProductManagementView from "../components/ProductManagementView.vue";
+import LoginView from "../views/LoginView.vue";
+import DashboardView from "../views/DashboardView.vue";
+import OrderHistoryView from "../views/OrderHistoryView.vue";
+import ProductManagementView from "../views/ProductManagementView.vue";
 
 const routes = [
   {
