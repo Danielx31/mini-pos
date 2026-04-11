@@ -2,15 +2,49 @@
 import { ref } from "vue";
 import { useOrdersStore } from "../stores/orders";
 import { useCurrency, useDateTime } from "../composables/useFormatters";
+import { useReceiptPdf } from "../composables/useReceiptPdf";
 import AppNavbar from "../components/AppNavbar.vue";
+import ReceiptView from "../components/ReceiptView.vue";
 
 const ordersStore = useOrdersStore();
 const { formatCurrency } = useCurrency();
 const { formatDateTime } = useDateTime();
+const { generatePDF, printReceipt } = useReceiptPdf();
+
 const expandedOrderId = ref(null);
+const selectedOrderForReceipt = ref(null);
+const isReceiptModalOpen = ref(false);
+const isPdfGenerating = ref(false);
 
 function toggleOrderDetail(orderNumber) {
   expandedOrderId.value = expandedOrderId.value === orderNumber ? null : orderNumber;
+}
+
+function openReceiptModal(order) {
+  selectedOrderForReceipt.value = order;
+  isReceiptModalOpen.value = true;
+}
+
+function closeReceiptModal() {
+  isReceiptModalOpen.value = false;
+  selectedOrderForReceipt.value = null;
+}
+
+async function handleDownloadPDF() {
+  if (!selectedOrderForReceipt.value) return;
+  try {
+    isPdfGenerating.value = true;
+    await generatePDF(selectedOrderForReceipt.value.orderNumber);
+  } catch (error) {
+    alert("Failed to generate PDF. Please try again.");
+  } finally {
+    isPdfGenerating.value = false;
+  }
+}
+
+function handlePrint() {
+  if (!selectedOrderForReceipt.value) return;
+  printReceipt(selectedOrderForReceipt.value.orderNumber);
 }
 
 function confirmClearHistory() {
@@ -149,6 +183,38 @@ function confirmClearHistory() {
                 </div>
               </div>
             </div>
+
+            <!-- Receipt Actions -->
+            <div class="mt-4 border-t border-slate-200 pt-4 flex gap-2 justify-end">
+              <button
+                @click="openReceiptModal(order)"
+                class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                View Receipt
+              </button>
+              <button
+                @click="() => { openReceiptModal(order); $nextTick(() => handlePrint()); }"
+                class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                Print
+              </button>
+              <button
+                @click="() => { selectedOrderForReceipt = order; handleDownloadPDF(); }"
+                class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="isPdfGenerating"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {{ isPdfGenerating ? 'Generating...' : 'Download PDF' }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -164,5 +230,59 @@ function confirmClearHistory() {
         <button class="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition" @click="confirmClearHistory">Clear All History</button>
       </div>
     </main>
+
+    <!-- Receipt Modal -->
+    <div v-if="isReceiptModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div class="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-auto">
+        <!-- Modal Header -->
+        <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+          <h2 class="text-lg font-semibold text-slate-900">Receipt - {{ selectedOrderForReceipt?.orderNumber }}</h2>
+          <button
+            @click="closeReceiptModal"
+            class="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200 transition"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body - Receipt Content -->
+        <div class="overflow-auto p-6">
+          <div class="flex justify-center">
+            <ReceiptView v-if="selectedOrderForReceipt" :order="selectedOrderForReceipt" />
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4 flex gap-3 justify-end">
+          <button
+            @click="closeReceiptModal"
+            class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+          >
+            Close
+          </button>
+          <button
+            @click="handlePrint"
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition inline-flex items-center gap-2"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print
+          </button>
+          <button
+            @click="handleDownloadPDF"
+            class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="isPdfGenerating"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            {{ isPdfGenerating ? 'Generating...' : 'Download PDF' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
