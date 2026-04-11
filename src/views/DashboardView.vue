@@ -2,11 +2,14 @@
 import { ref } from "vue";
 import { usePosStore } from "../stores/pos";
 import { useCouponsStore } from "../stores/coupons";
+import { usePaymentStore } from "../stores/payment";
 import { useCurrency } from "../composables/useFormatters";
 import AppNavbar from "../components/AppNavbar.vue";
+import PaymentModal from "../components/PaymentModal.vue";
 
 const posStore = usePosStore();
 const couponsStore = useCouponsStore();
+const paymentStore = usePaymentStore();
 const { formatCurrency } = useCurrency();
 const checkoutNotice = ref(null);
 
@@ -24,7 +27,24 @@ function increaseQuantity(item) {
 }
 
 function checkoutSale() {
-  checkoutNotice.value = posStore.checkout();
+  const result = posStore.initiateCheckout();
+  
+  if (!result.ok) {
+    checkoutNotice.value = result;
+    return;
+  }
+  
+  paymentStore.openPaymentModal();
+}
+
+function handlePaymentConfirm() {
+  paymentStore.closePaymentModal();
+  const result = posStore.completeCheckout();
+  checkoutNotice.value = result;
+}
+
+function handlePaymentCancel() {
+  paymentStore.closePaymentModal();
 }
 </script>
 
@@ -136,5 +156,13 @@ function checkoutSale() {
         </aside>
       </div>
     </main>
+
+    <!-- Payment Modal -->
+    <PaymentModal
+      v-if="paymentStore.isPaymentModalOpen"
+      :total-amount="posStore.grandTotal"
+      @confirm="handlePaymentConfirm"
+      @cancel="handlePaymentCancel"
+    />
   </div>
 </template>

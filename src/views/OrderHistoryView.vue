@@ -107,6 +107,48 @@ function confirmClearHistory() {
               <div class="mt-2 flex justify-between text-slate-600"><span>Tax (8%)</span><span>{{ formatCurrency(order.tax) }}</span></div>
               <div class="mt-3 flex justify-between text-base font-semibold text-slate-900"><span>Total</span><span>{{ formatCurrency(order.total) }}</span></div>
             </div>
+
+            <!-- Payment Information -->
+            <div v-if="order.payment" class="mt-4 border-t border-slate-200 pt-4">
+              <div class="flex items-center justify-between">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</p>
+                <span
+                  class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
+                  :class="{
+                    'bg-blue-100 text-blue-700': order.payment.paymentMethod === 'card',
+                    'bg-green-100 text-green-700': order.payment.paymentMethod === 'cash',
+                    'bg-purple-100 text-purple-700': order.payment.paymentMethod === 'e-wallet',
+                  }"
+                >
+                  {{
+                    order.payment.paymentMethod === 'card'
+                      ? 'Credit/Debit Card'
+                      : order.payment.paymentMethod === 'cash'
+                        ? 'Cash'
+                        : 'E-Wallet'
+                  }}
+                </span>
+              </div>
+
+              <!-- Cash Payment Details -->
+              <div
+                v-if="order.payment.paymentMethod === 'cash'"
+                class="mt-3 space-y-2 rounded-xl bg-green-50 p-3"
+              >
+                <div class="flex justify-between text-sm text-green-900">
+                  <span>Cash Tendered</span>
+                  <span class="font-semibold">{{
+                    formatCurrency(order.payment.cashTendered)
+                  }}</span>
+                </div>
+                <div class="flex justify-between text-sm text-green-900">
+                  <span>Change</span>
+                  <span class="font-semibold">{{
+                    formatCurrency(order.payment.change)
+                  }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

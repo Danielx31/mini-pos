@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import { useOrdersStore } from "./orders";
 import { useProductsStore } from "./products";
 import { useCouponsStore } from "./coupons";
+import { usePaymentStore } from "./payment";
 import { TAX_RATE } from "../constants/routes";
 
 export const usePosStore = defineStore("pos", () => {
@@ -128,7 +129,23 @@ export const usePosStore = defineStore("pos", () => {
     couponError.value = "";
   }
 
-  function checkout() {
+  function initiateCheckout() {
+    if (cartItems.value.length === 0) {
+      return {
+        ok: false,
+        message: "Add at least one item before checkout.",
+      };
+    }
+
+    return {
+      ok: true,
+      message: "Ready to proceed with payment.",
+    };
+  }
+
+  function completeCheckout() {
+    const paymentStore = usePaymentStore();
+
     if (cartItems.value.length === 0) {
       return {
         ok: false,
@@ -143,6 +160,8 @@ export const usePosStore = defineStore("pos", () => {
       ? { ...appliedCoupon.value }
       : null;
 
+    const paymentSnapshot = paymentStore.getPaymentSnapshot(grandTotal.value);
+
     const orderSummary = {
       orderNumber,
       itemCount: totalItems.value,
@@ -151,6 +170,7 @@ export const usePosStore = defineStore("pos", () => {
       coupon: couponSnapshot,
       tax: taxAmount.value,
       total: grandTotal.value,
+      payment: paymentSnapshot,
       checkedOutAt: new Date().toISOString(),
       items: checkedOutItems,
     };
@@ -160,6 +180,7 @@ export const usePosStore = defineStore("pos", () => {
     }
 
     clearCart();
+    paymentStore.resetPayment();
 
     const ordersStore = useOrdersStore();
     ordersStore.addOrder(orderSummary);
@@ -191,6 +212,7 @@ export const usePosStore = defineStore("pos", () => {
     clearCart,
     applyCoupon,
     removeCoupon,
-    checkout,
+    initiateCheckout,
+    completeCheckout,
   };
 });
