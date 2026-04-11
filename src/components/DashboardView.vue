@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from "vue";
 import { usePosStore } from "../stores/pos";
+import { useCouponsStore } from "../stores/coupons";
 import { useCurrency } from "../composables/useFormatters";
 import AppNavbar from "./AppNavbar.vue";
 
 const posStore = usePosStore();
+const couponsStore = useCouponsStore();
 const { formatCurrency } = useCurrency();
 const checkoutNotice = ref(null);
 
@@ -155,20 +157,76 @@ function checkoutSale() {
             </p>
           </div>
 
-          <div class="mt-5 border-t border-slate-200 pt-4 text-sm">
-            <div class="mb-1 flex justify-between text-slate-600">
-              <span>Subtotal</span>
-              <span>{{ formatCurrency(posStore.subtotal) }}</span>
+          <div class="mt-5 border-t border-slate-200 pt-4">
+            <!-- Coupon Section -->
+            <div class="mb-4">
+              <div v-if="posStore.appliedCoupon" class="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-emerald-700 truncate">
+                    {{ posStore.appliedCoupon.code }}
+                    <span class="font-normal text-emerald-600">
+                      &mdash; {{ couponsStore.formatCouponValue(posStore.appliedCoupon) }} off
+                    </span>
+                  </p>
+                  <p class="text-xs text-emerald-600 truncate">{{ posStore.appliedCoupon.description }}</p>
+                </div>
+                <button
+                  class="ml-2 shrink-0 text-xs font-medium text-emerald-700 hover:text-emerald-900"
+                  @click="posStore.removeCoupon()"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <div v-else>
+                <div class="flex gap-2">
+                  <input
+                    v-model="posStore.couponCode"
+                    type="text"
+                    placeholder="Coupon code"
+                    class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 uppercase placeholder:normal-case placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    @keyup.enter="posStore.applyCoupon()"
+                  />
+                  <button
+                    class="shrink-0 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="!posStore.couponCode.trim()"
+                    @click="posStore.applyCoupon()"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <p
+                  v-if="posStore.couponError"
+                  class="mt-1.5 text-xs text-rose-600"
+                >
+                  {{ posStore.couponError }}
+                </p>
+              </div>
             </div>
-            <div class="mb-1 flex justify-between text-slate-600">
-              <span>Tax (8%)</span>
-              <span>{{ formatCurrency(posStore.taxAmount) }}</span>
-            </div>
-            <div
-              class="flex justify-between text-base font-semibold text-slate-900"
-            >
-              <span>Total</span>
-              <span>{{ formatCurrency(posStore.grandTotal) }}</span>
+
+            <!-- Financial Summary -->
+            <div class="text-sm">
+              <div class="mb-1 flex justify-between text-slate-600">
+                <span>Subtotal</span>
+                <span>{{ formatCurrency(posStore.subtotal) }}</span>
+              </div>
+              <div
+                v-if="posStore.appliedCoupon"
+                class="mb-1 flex justify-between text-emerald-600"
+              >
+                <span>Discount ({{ couponsStore.formatCouponValue(posStore.appliedCoupon) }})</span>
+                <span>&minus;{{ formatCurrency(posStore.discountAmount) }}</span>
+              </div>
+              <div class="mb-1 flex justify-between text-slate-600">
+                <span>Tax (8%)</span>
+                <span>{{ formatCurrency(posStore.taxAmount) }}</span>
+              </div>
+              <div
+                class="flex justify-between text-base font-semibold text-slate-900"
+              >
+                <span>Total</span>
+                <span>{{ formatCurrency(posStore.grandTotal) }}</span>
+              </div>
             </div>
           </div>
 

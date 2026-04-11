@@ -176,6 +176,15 @@ function toggleOrderDetail(orderNumber) {
                 <span>Subtotal</span>
                 <span>{{ formatCurrency(order.subtotal) }}</span>
               </div>
+              <div
+                v-if="order.coupon"
+                class="flex justify-between text-emerald-600"
+              >
+                <span>
+                  Discount ({{ order.coupon.code }})
+                </span>
+                <span>&minus;{{ formatCurrency(order.discount) }}</span>
+              </div>
               <div class="flex justify-between text-slate-600">
                 <span>Tax (8%)</span>
                 <span>{{ formatCurrency(order.tax) }}</span>

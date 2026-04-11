@@ -2,14 +2,19 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { useOrdersStore } from "./orders";
 import { useProductsStore } from "./products";
+import { useCouponsStore } from "./coupons";
 
 const TAX_RATE = 0.08;
 
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");
   const cartItems = ref([]);
+  const appliedCoupon = ref(null);
+  const couponCode = ref("");
+  const couponError = ref("");
 
   const productsStore = useProductsStore();
+  const couponsStore = useCouponsStore();
   const products = computed(() => productsStore.products);
 
   const filteredProducts = computed(() => {
@@ -34,8 +39,14 @@ export const usePosStore = defineStore("pos", () => {
     );
   });
 
-  const taxAmount = computed(() => subtotal.value * TAX_RATE);
-  const grandTotal = computed(() => subtotal.value + taxAmount.value);
+  const discountAmount = computed(() =>
+    couponsStore.calculateDiscount(appliedCoupon.value, subtotal.value),
+  );
+  const discountedSubtotal = computed(
+    () => subtotal.value - discountAmount.value,
+  );
+  const taxAmount = computed(() => discountedSubtotal.value * TAX_RATE);
+  const grandTotal = computed(() => discountedSubtotal.value + taxAmount.value);
 
   const totalItems = computed(() => {
     return cartItems.value.reduce((sum, item) => sum + item.quantity, 0);
@@ -92,6 +103,30 @@ export const usePosStore = defineStore("pos", () => {
 
   function clearCart() {
     cartItems.value = [];
+    removeCoupon();
+  }
+
+  function applyCoupon() {
+    couponError.value = "";
+
+    const result = couponsStore.validateCoupon(
+      couponCode.value,
+      subtotal.value,
+    );
+
+    if (!result.ok) {
+      couponError.value = result.message;
+      return;
+    }
+
+    appliedCoupon.value = { ...result.coupon };
+    couponCode.value = "";
+  }
+
+  function removeCoupon() {
+    appliedCoupon.value = null;
+    couponCode.value = "";
+    couponError.value = "";
   }
 
   function checkout() {
@@ -104,15 +139,26 @@ export const usePosStore = defineStore("pos", () => {
 
     const orderNumber = `ORD-${Date.now()}`;
     const checkedOutItems = cartItems.value.map((item) => ({ ...item }));
+    const discount = discountAmount.value;
+    const couponSnapshot = appliedCoupon.value
+      ? { ...appliedCoupon.value }
+      : null;
+
     const orderSummary = {
       orderNumber,
       itemCount: totalItems.value,
       subtotal: subtotal.value,
+      discount,
+      coupon: couponSnapshot,
       tax: taxAmount.value,
       total: grandTotal.value,
       checkedOutAt: new Date().toISOString(),
       items: checkedOutItems,
     };
+
+    if (couponSnapshot) {
+      couponsStore.recordUsage(couponSnapshot.id);
+    }
 
     clearCart();
 
@@ -137,8 +183,15 @@ export const usePosStore = defineStore("pos", () => {
     totalItems,
     addToCart,
     updateQuantity,
+    appliedCoupon,
+    couponCode,
+    couponError,
+    discountAmount,
+    discountedSubtotal,
     removeFromCart,
     clearCart,
+    applyCoupon,
+    removeCoupon,
     checkout,
   };
 });
