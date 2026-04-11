@@ -140,6 +140,38 @@ function handlePaymentCancel() {
             <div v-if="posStore.cartItems.length === 0" class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">No items in cart yet. Add a product to begin checkout.</div>
           </div>
 
+          <!-- Coupon Application Section -->
+          <div v-if="posStore.cartItems.length > 0" class="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-sm font-medium text-slate-700">Apply Coupon</p>
+            <div v-if="!posStore.appliedCoupon" class="mt-3 flex gap-2">
+              <input
+                v-model="posStore.couponCode"
+                type="text"
+                placeholder="Enter coupon code"
+                class="flex-1 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+              <button
+                class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+                @click="posStore.applyCoupon"
+              >
+                Apply
+              </button>
+            </div>
+            <div v-if="posStore.couponError" class="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{{ posStore.couponError }}</div>
+            <div v-if="posStore.appliedCoupon" class="mt-3 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+              <div>
+                <p class="text-sm font-semibold text-emerald-700">{{ posStore.appliedCoupon.code }}</p>
+                <p class="text-xs text-emerald-600">{{ posStore.appliedCoupon.description }}</p>
+              </div>
+              <button
+                class="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                @click="posStore.removeCoupon"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+
           <div class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4">
             <div class="flex justify-between text-sm text-slate-600"><span>Subtotal</span><span>{{ formatCurrency(posStore.subtotal) }}</span></div>
             <div v-if="posStore.appliedCoupon" class="mt-3 flex justify-between text-sm font-medium text-emerald-600"><span>Discount</span><span>-{{ formatCurrency(posStore.discountAmount) }}</span></div>
