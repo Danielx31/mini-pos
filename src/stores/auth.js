@@ -2,15 +2,38 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 
 const STORAGE_KEY = "mini_pos_auth";
-const DEFAULT_USERNAME = "admin";
-const DEFAULT_PASSWORD = "admin123";
+
+// User roles
+export const USER_ROLES = Object.freeze({
+  ADMIN: "admin",
+  CASHIER: "cashier",
+});
+
+// User database (in production, this would come from a backend)
+const USERS = [
+  {
+    username: "admin",
+    password: "admin123",
+    role: USER_ROLES.ADMIN,
+    displayName: "Administrator",
+  },
+  {
+    username: "cashier",
+    password: "cashier123",
+    role: USER_ROLES.CASHIER,
+    displayName: "Cashier",
+  },
+];
 
 export const useAuthStore = defineStore("auth", () => {
   const user = ref(loadUserFromStorage());
   const loginError = ref("");
 
   const isAuthenticated = computed(() => user.value !== null);
-  const displayName = computed(() => user.value?.username ?? "");
+  const displayName = computed(() => user.value?.displayName ?? "");
+  const userRole = computed(() => user.value?.role ?? null);
+  const isAdmin = computed(() => userRole.value === USER_ROLES.ADMIN);
+  const isCashier = computed(() => userRole.value === USER_ROLES.CASHIER);
 
   function loadUserFromStorage() {
     try {
@@ -29,13 +52,19 @@ export const useAuthStore = defineStore("auth", () => {
       return false;
     }
 
-    if (username === DEFAULT_USERNAME && password === DEFAULT_PASSWORD) {
-      const userData = { username, loggedInAt: new Date().toISOString() };
-      console.log("User Data: ", userData);
+    const foundUser = USERS.find(
+      (u) => u.username === username && u.password === password
+    );
+
+    if (foundUser) {
+      const userData = {
+        username: foundUser.username,
+        displayName: foundUser.displayName,
+        role: foundUser.role,
+        loggedInAt: new Date().toISOString(),
+      };
 
       user.value = userData;
-      console.log("JSON.stringify(userData): ", JSON.stringify(userData));
-
       localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
       return true;
     }
@@ -55,6 +84,9 @@ export const useAuthStore = defineStore("auth", () => {
     loginError,
     isAuthenticated,
     displayName,
+    userRole,
+    isAdmin,
+    isCashier,
     login,
     logout,
   };

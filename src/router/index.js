@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { useAuthStore } from "../stores/auth";
+import { useAuthStore, USER_ROLES } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
 import LoginView from "../views/LoginView.vue";
 import DashboardView from "../views/DashboardView.vue";
@@ -29,7 +29,7 @@ const routes = [
     path: "/products",
     name: ROUTE_NAMES.PRODUCTS,
     component: ProductManagementView,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresRole: USER_ROLES.ADMIN },
   },
 ];
 
@@ -46,6 +46,11 @@ router.beforeEach((to, _from) => {
   }
 
   if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    return { name: ROUTE_NAMES.POS };
+  }
+
+  if (to.meta.requiresRole && authStore.userRole !== to.meta.requiresRole) {
+    // Redirect to POS if user doesn't have required role
     return { name: ROUTE_NAMES.POS };
   }
 });

@@ -38,6 +38,7 @@ function handleLogout() {
         <div v-if="!showBack" class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm text-slate-200">
           <span class="font-medium text-white">Hello,</span>
           <span class="font-semibold text-white">{{ authStore.displayName }}</span>
+          <span class="text-xs text-slate-400">({{ authStore.userRole }})</span>
         </div>
 
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -54,6 +55,7 @@ function handleLogout() {
 
           <template v-if="!showBack">
             <button
+              v-if="authStore.isAdmin"
               class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
               @click="router.push({ name: ROUTE_NAMES.PRODUCTS })"
             >

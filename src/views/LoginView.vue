@@ -92,7 +92,10 @@ async function handleLogin() {
           <span v-else>Sign In</span>
         </button>
 
-        <p class="mt-4 text-center text-xs text-slate-500">Demo: <span class="text-slate-400">admin</span> / <span class="text-slate-400">admin123</span></p>
+        <p class="mt-4 text-center text-xs text-slate-500">
+          Demo accounts:<br>
+          <span class="text-slate-400">admin / admin123</span> (Admin) • <span class="text-slate-400">cashier / cashier123</span> (Cashier)
+        </p>
       </form>
     </div>
   </div>

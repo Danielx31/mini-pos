@@ -1,12 +1,14 @@
 <script setup>
 import { ref } from "vue";
 import { useOrdersStore } from "../stores/orders";
+import { useAuthStore } from "../stores/auth";
 import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { useReceiptPdf } from "../composables/useReceiptPdf";
 import AppNavbar from "../components/AppNavbar.vue";
 import ReceiptView from "../components/ReceiptView.vue";
 
 const ordersStore = useOrdersStore();
+const authStore = useAuthStore();
 const { formatCurrency } = useCurrency();
 const { formatDateTime } = useDateTime();
 const { generatePDF, printReceipt } = useReceiptPdf();
@@ -227,7 +229,7 @@ function confirmClearHistory() {
       </div>
 
       <div v-if="ordersStore.orders.length > 0" class="mt-6 flex justify-end">
-        <button class="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition" @click="confirmClearHistory">Clear All History</button>
+        <button v-if="authStore.isAdmin" class="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition" @click="confirmClearHistory">Clear All History</button>
       </div>
     </main>
 
