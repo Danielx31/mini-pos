@@ -14,10 +14,27 @@ export const useProductsStore = defineStore("products", () => {
 
   const totalProducts = computed(() => products.value.length);
 
+  const lowStockAlerts = computed(() => {
+    return products.value.filter((p) => (p.stock || 0) <= (p.lowStockThreshold || 0));
+  });
+
+  const outOfStockProducts = computed(() => {
+    return products.value.filter((p) => (p.stock || 0) === 0);
+  });
+
   function loadProductsFromStorage() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [...DEFAULT_PRODUCTS];
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Ensure all products have stock and lowStockThreshold properties
+        return parsed.map(product => ({
+          ...product,
+          stock: product.stock ?? 0,
+          lowStockThreshold: product.lowStockThreshold ?? 0
+        }));
+      }
+      return [...DEFAULT_PRODUCTS];
     } catch {
       return [...DEFAULT_PRODUCTS];
     }
@@ -35,13 +52,23 @@ export const useProductsStore = defineStore("products", () => {
     return `p-${String(maxNum + 1).padStart(3, "0")}`;
   }
 
-  function addProduct({ name, category, price }) {
+  function addProduct({ name, category, price, stock, lowStockThreshold }) {
     const trimmedName = name.trim();
     const trimmedCategory = category.trim();
     const parsedPrice = parseFloat(price);
+    const parsedStock = parseInt(stock);
+    const parsedThreshold = parseInt(lowStockThreshold);
 
     if (!trimmedName || !trimmedCategory || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
       return { ok: false, message: "Please fill in all fields with valid values." };
+    }
+
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      return { ok: false, message: "Stock quantity must be a valid non-negative number." };
+    }
+
+    if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0) {
+      return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
     }
 
     const duplicate = products.value.some(
@@ -56,6 +83,8 @@ export const useProductsStore = defineStore("products", () => {
       name: trimmedName,
       category: trimmedCategory,
       price: Math.round(parsedPrice * 100) / 100,
+      stock: parsedStock,
+      lowStockThreshold: parsedThreshold,
     };
 
     products.value.push(newProduct);
@@ -63,13 +92,23 @@ export const useProductsStore = defineStore("products", () => {
     return { ok: true, message: `"${trimmedName}" added successfully.` };
   }
 
-  function updateProduct(id, { name, category, price }) {
+  function updateProduct(id, { name, category, price, stock, lowStockThreshold }) {
     const trimmedName = name.trim();
     const trimmedCategory = category.trim();
     const parsedPrice = parseFloat(price);
+    const parsedStock = parseInt(stock);
+    const parsedThreshold = parseInt(lowStockThreshold);
 
     if (!trimmedName || !trimmedCategory || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
       return { ok: false, message: "Please fill in all fields with valid values." };
+    }
+
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      return { ok: false, message: "Stock quantity must be a valid non-negative number." };
+    }
+
+    if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0) {
+      return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
     }
 
     const duplicate = products.value.some(
@@ -87,6 +126,8 @@ export const useProductsStore = defineStore("products", () => {
     product.name = trimmedName;
     product.category = trimmedCategory;
     product.price = Math.round(parsedPrice * 100) / 100;
+    product.stock = parsedStock;
+    product.lowStockThreshold = parsedThreshold;
     saveProductsToStorage();
     return { ok: true, message: `"${trimmedName}" updated successfully.` };
   }
@@ -102,6 +143,32 @@ export const useProductsStore = defineStore("products", () => {
     return { ok: true, message: `"${product.name}" deleted.` };
   }
 
+  function decrementStock(productId, quantity) {
+    const product = products.value.find((p) => p.id === productId);
+    if (!product) {
+      return { ok: false, message: "Product not found." };
+    }
+
+    if ((product.stock || 0) < quantity) {
+      return { ok: false, message: `Insufficient stock for "${product.name}". Available: ${product.stock || 0}` };
+    }
+
+    product.stock = (product.stock || 0) - quantity;
+    saveProductsToStorage();
+    return { ok: true, message: `Stock decremented for "${product.name}".` };
+  }
+
+  function checkStockAvailability(productId, quantity) {
+    const product = products.value.find((p) => p.id === productId);
+    if (!product) return false;
+    return (product.stock || 0) >= quantity;
+  }
+
+  function getProductStock(productId) {
+    const product = products.value.find((p) => p.id === productId);
+    return product ? (product.stock || 0) : 0;
+  }
+
   function resetToDefaults() {
     products.value = [...DEFAULT_PRODUCTS];
     saveProductsToStorage();
@@ -112,9 +179,14 @@ export const useProductsStore = defineStore("products", () => {
     products,
     categories,
     totalProducts,
+    lowStockAlerts,
+    outOfStockProducts,
     addProduct,
     updateProduct,
     deleteProduct,
     resetToDefaults,
+    decrementStock,
+    checkStockAvailability,
+    getProductStock,
   };
 });

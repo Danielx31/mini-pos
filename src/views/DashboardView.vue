@@ -21,8 +21,12 @@ const selectedOrder = ref(null);
 const isPdfGenerating = ref(false);
 
 function addProductToCart(product) {
-  posStore.addToCart(product);
-  checkoutNotice.value = null;
+  const result = posStore.addToCart(product);
+  if (!result.ok) {
+    checkoutNotice.value = result;
+  } else {
+    checkoutNotice.value = null;
+  }
 }
 
 function decreaseQuantity(item) {
@@ -30,7 +34,12 @@ function decreaseQuantity(item) {
 }
 
 function increaseQuantity(item) {
-  posStore.updateQuantity(item.productId, item.quantity + 1);
+  const result = posStore.updateQuantity(item.productId, item.quantity + 1);
+  if (!result.ok) {
+    checkoutNotice.value = result;
+  } else {
+    checkoutNotice.value = null;
+  }
 }
 
 function checkoutSale() {
@@ -135,11 +144,33 @@ function handlePrint() {
             <article v-for="product in posStore.filteredProducts" :key="product.id" class="group rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg">
               <div class="flex items-center justify-between gap-4">
                 <span class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">{{ product.category }}</span>
-                <span class="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-700">NEW</span>
+                <div class="flex items-center gap-2">
+                  <span 
+                    class="rounded-full px-2 py-1 text-xs font-semibold"
+                    :class="{
+                      'bg-red-100 text-red-700': (product.stock || 0) === 0,
+                      'bg-amber-100 text-amber-700': (product.stock || 0) > 0 && (product.stock || 0) <= (product.lowStockThreshold || 0),
+                      'bg-emerald-100 text-emerald-700': (product.stock || 0) > (product.lowStockThreshold || 0)
+                    }"
+                  >
+                    Stock: {{ product.stock || 0 }}
+                  </span>
+                  <span v-if="(product.stock || 0) <= (product.lowStockThreshold || 0)" class="text-xs">⚠️</span>
+                </div>
               </div>
               <h3 class="mt-4 text-base font-semibold text-slate-900">{{ product.name }}</h3>
               <p class="mt-3 text-lg font-bold text-blue-700">{{ formatCurrency(product.price) }}</p>
-              <button class="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500" @click="addProductToCart(product)">Add to Cart</button>
+              <button 
+                class="mt-6 inline-flex w-full items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold text-white transition" 
+                :class="{
+                  'bg-blue-600 hover:bg-blue-500': (product.stock || 0) > 0,
+                  'bg-slate-400 cursor-not-allowed': (product.stock || 0) === 0
+                }"
+                :disabled="(product.stock || 0) === 0"
+                @click="addProductToCart(product)"
+              >
+                {{ (product.stock || 0) === 0 ? 'Out of Stock' : 'Add to Cart' }}
+              </button>
             </article>
           </div>
 

@@ -53,13 +53,22 @@ export const usePosStore = defineStore("pos", () => {
   });
 
   function addToCart(product) {
+    // Check if product is in stock
+    if (!productsStore.checkStockAvailability(product.id, 1)) {
+      return { ok: false, message: `"${product.name}" is out of stock.` };
+    }
+
     const cartItem = cartItems.value.find(
       (item) => item.productId === product.id,
     );
 
     if (cartItem) {
+      // Check if adding one more would exceed available stock
+      if (!productsStore.checkStockAvailability(product.id, cartItem.quantity + 1)) {
+        return { ok: false, message: `Cannot add more "${product.name}". Only ${productsStore.getProductStock(product.id)} available.` };
+      }
       cartItem.quantity += 1;
-      return;
+      return { ok: true };
     }
 
     cartItems.value.push({
@@ -68,6 +77,7 @@ export const usePosStore = defineStore("pos", () => {
       price: product.price,
       quantity: 1,
     });
+    return { ok: true };
   }
 
   function updateQuantity(productId, quantity) {
@@ -82,6 +92,11 @@ export const usePosStore = defineStore("pos", () => {
         (item) => item.productId !== productId,
       );
       return;
+    }
+
+    // Check stock availability
+    if (!productsStore.checkStockAvailability(productId, nextQuantity)) {
+      return { ok: false, message: `Cannot update quantity. Only ${productsStore.getProductStock(productId)} available.` };
     }
 
     const cartItem = cartItems.value.find(
@@ -177,6 +192,15 @@ export const usePosStore = defineStore("pos", () => {
 
     if (couponSnapshot) {
       couponsStore.recordUsage(couponSnapshot.id);
+    }
+
+    // Decrement stock for each item in the order
+    for (const item of checkedOutItems) {
+      const result = productsStore.decrementStock(item.productId, item.quantity);
+      if (!result.ok) {
+        // This shouldn't happen since we validate stock before checkout, but just in case
+        console.error("Stock decrement failed:", result.message);
+      }
     }
 
     clearCart();
