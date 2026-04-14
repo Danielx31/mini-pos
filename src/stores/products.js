@@ -27,11 +27,12 @@ export const useProductsStore = defineStore("products", () => {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        // Ensure all products have stock and lowStockThreshold properties
+        // Ensure all products have stock, lowStockThreshold, and SKU properties
         return parsed.map(product => ({
           ...product,
+          sku: product.sku?.trim() || product.id,
           stock: product.stock ?? 0,
-          lowStockThreshold: product.lowStockThreshold ?? 0
+          lowStockThreshold: product.lowStockThreshold ?? 0,
         }));
       }
       return [...DEFAULT_PRODUCTS];
@@ -52,9 +53,10 @@ export const useProductsStore = defineStore("products", () => {
     return `p-${String(maxNum + 1).padStart(3, "0")}`;
   }
 
-  function addProduct({ name, category, price, stock, lowStockThreshold }) {
+  function addProduct({ name, category, price, stock, lowStockThreshold, sku }) {
     const trimmedName = name.trim();
     const trimmedCategory = category.trim();
+    const trimmedSku = sku?.trim();
     const parsedPrice = parseFloat(price);
     const parsedStock = parseInt(stock);
     const parsedThreshold = parseInt(lowStockThreshold);
@@ -71,15 +73,25 @@ export const useProductsStore = defineStore("products", () => {
       return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
     }
 
-    const duplicate = products.value.some(
+    const duplicateName = products.value.some(
       (p) => p.name.toLowerCase() === trimmedName.toLowerCase(),
     );
-    if (duplicate) {
+    if (duplicateName) {
       return { ok: false, message: `A product named "${trimmedName}" already exists.` };
+    }
+
+    if (trimmedSku) {
+      const duplicateSku = products.value.some(
+        (p) => p.sku?.toLowerCase() === trimmedSku.toLowerCase(),
+      );
+      if (duplicateSku) {
+        return { ok: false, message: `The SKU "${trimmedSku}" is already assigned to another product.` };
+      }
     }
 
     const newProduct = {
       id: generateId(),
+      sku: trimmedSku || undefined,
       name: trimmedName,
       category: trimmedCategory,
       price: Math.round(parsedPrice * 100) / 100,
@@ -92,9 +104,10 @@ export const useProductsStore = defineStore("products", () => {
     return { ok: true, message: `"${trimmedName}" added successfully.` };
   }
 
-  function updateProduct(id, { name, category, price, stock, lowStockThreshold }) {
+  function updateProduct(id, { name, category, price, stock, lowStockThreshold, sku }) {
     const trimmedName = name.trim();
     const trimmedCategory = category.trim();
+    const trimmedSku = sku?.trim();
     const parsedPrice = parseFloat(price);
     const parsedStock = parseInt(stock);
     const parsedThreshold = parseInt(lowStockThreshold);
@@ -111,11 +124,20 @@ export const useProductsStore = defineStore("products", () => {
       return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
     }
 
-    const duplicate = products.value.some(
+    const duplicateName = products.value.some(
       (p) => p.id !== id && p.name.toLowerCase() === trimmedName.toLowerCase(),
     );
-    if (duplicate) {
+    if (duplicateName) {
       return { ok: false, message: `A product named "${trimmedName}" already exists.` };
+    }
+
+    if (trimmedSku) {
+      const duplicateSku = products.value.some(
+        (p) => p.id !== id && p.sku?.toLowerCase() === trimmedSku.toLowerCase(),
+      );
+      if (duplicateSku) {
+        return { ok: false, message: `The SKU "${trimmedSku}" is already assigned to another product.` };
+      }
     }
 
     const product = products.value.find((p) => p.id === id);
@@ -125,6 +147,7 @@ export const useProductsStore = defineStore("products", () => {
 
     product.name = trimmedName;
     product.category = trimmedCategory;
+    product.sku = trimmedSku || undefined;
     product.price = Math.round(parsedPrice * 100) / 100;
     product.stock = parsedStock;
     product.lowStockThreshold = parsedThreshold;
@@ -141,6 +164,20 @@ export const useProductsStore = defineStore("products", () => {
     products.value = products.value.filter((p) => p.id !== id);
     saveProductsToStorage();
     return { ok: true, message: `"${product.name}" deleted.` };
+  }
+
+  function getProductByBarcode(code) {
+    const normalizedCode = String(code || "").trim().toLowerCase();
+    if (!normalizedCode) {
+      return null;
+    }
+
+    return products.value.find((product) => {
+      return (
+        product.id.toLowerCase() === normalizedCode ||
+        (product.sku && product.sku.toLowerCase() === normalizedCode)
+      );
+    }) || null;
   }
 
   function decrementStock(productId, quantity) {
@@ -188,5 +225,6 @@ export const useProductsStore = defineStore("products", () => {
     decrementStock,
     checkStockAvailability,
     getProductStock,
+    getProductByBarcode,
   };
 });

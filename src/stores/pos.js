@@ -27,7 +27,9 @@ export const usePosStore = defineStore("pos", () => {
     return products.value.filter((product) => {
       return (
         product.name.toLowerCase().includes(normalizedSearch) ||
-        product.category.toLowerCase().includes(normalizedSearch)
+        product.category.toLowerCase().includes(normalizedSearch) ||
+        product.id.toLowerCase().includes(normalizedSearch) ||
+        product.sku?.toLowerCase().includes(normalizedSearch)
       );
     });
   });
@@ -78,6 +80,25 @@ export const usePosStore = defineStore("pos", () => {
       quantity: 1,
     });
     return { ok: true };
+  }
+
+  function addToCartByBarcode(code) {
+    const normalizedCode = String(code || "").trim();
+    if (!normalizedCode) {
+      return { ok: false, message: "Enter a barcode or SKU to add a product." };
+    }
+
+    const product = productsStore.getProductByBarcode(normalizedCode);
+    if (!product) {
+      return { ok: false, message: `No product found for barcode/SKU "${normalizedCode}".` };
+    }
+
+    const result = addToCart(product);
+    if (!result.ok) {
+      return result;
+    }
+
+    return { ok: true, message: `Added "${product.name}" to cart.` };
   }
 
   function updateQuantity(productId, quantity) {
@@ -238,5 +259,6 @@ export const usePosStore = defineStore("pos", () => {
     removeCoupon,
     initiateCheckout,
     completeCheckout,
+    addToCartByBarcode,
   };
 });

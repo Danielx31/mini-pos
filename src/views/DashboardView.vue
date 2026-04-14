@@ -15,6 +15,7 @@ const paymentStore = usePaymentStore();
 const { formatCurrency } = useCurrency();
 const { generatePDF, printReceipt } = useReceiptPdf();
 const checkoutNotice = ref(null);
+const barcodeInput = ref("");
 
 const isReceiptModalOpen = ref(false);
 const selectedOrder = ref(null);
@@ -27,6 +28,25 @@ function addProductToCart(product) {
   } else {
     checkoutNotice.value = null;
   }
+}
+
+function handleBarcodeSubmit() {
+  if (typeof posStore.addToCartByBarcode !== "function") {
+    checkoutNotice.value = {
+      ok: false,
+      message: "Barcode support is not yet available in the current build. Please save files and refresh the page.",
+    };
+    return;
+  }
+
+  const result = posStore.addToCartByBarcode(barcodeInput.value);
+  barcodeInput.value = "";
+  if (!result.ok) {
+    checkoutNotice.value = result;
+    return;
+  }
+
+  checkoutNotice.value = result;
 }
 
 function decreaseQuantity(item) {
@@ -132,11 +152,32 @@ function handlePrint() {
               <h2 class="text-lg font-semibold text-slate-900">Product Catalog</h2>
               <p class="mt-1 text-sm text-slate-500">Search, browse, and add items to the current sale.</p>
             </div>
-            <div class="relative w-full sm:w-auto">
-              <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-              </svg>
-              <input v-model="posStore.searchTerm" type="text" placeholder="Search products or category" class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-10 py-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(320px,1fr)] w-full">
+              <div class="relative w-full">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+                </svg>
+                <input v-model="posStore.searchTerm" type="text" placeholder="Search products or category" class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-10 py-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+              </div>
+              <div class="relative w-full">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h4m-4 5h16" />
+                </svg>
+                <input
+                  v-model="barcodeInput"
+                  @keydown.enter.prevent="handleBarcodeSubmit"
+                  type="text"
+                  placeholder="Scan barcode / enter SKU"
+                  class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-10 py-3 pr-28 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                <button
+                  type="button"
+                  @click="handleBarcodeSubmit"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  Add
+                </button>
+              </div>
             </div>
           </div>
 
@@ -158,7 +199,8 @@ function handlePrint() {
                   <span v-if="(product.stock || 0) <= (product.lowStockThreshold || 0)" class="text-xs">⚠️</span>
                 </div>
               </div>
-              <h3 class="mt-4 text-base font-semibold text-slate-900">{{ product.name }}</h3>
+              <p class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">SKU: {{ product.sku || product.id }}</p>
+              <h3 class="mt-2 text-base font-semibold text-slate-900">{{ product.name }}</h3>
               <p class="mt-3 text-lg font-bold text-blue-700">{{ formatCurrency(product.price) }}</p>
               <button 
                 class="mt-6 inline-flex w-full items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold text-white transition" 

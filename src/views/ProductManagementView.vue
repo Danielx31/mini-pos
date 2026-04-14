@@ -15,6 +15,7 @@ const editingProductId = ref(null);
 
 const formName = ref("");
 const formCategory = ref("");
+const formSku = ref("");
 const formPrice = ref("");
 const formStock = ref("");
 const formLowStockThreshold = ref("");
@@ -27,13 +28,15 @@ const filteredProducts = computed(() => {
     (p) =>
       p.name.toLowerCase().includes(normalized) ||
       p.category.toLowerCase().includes(normalized) ||
-      p.id.toLowerCase().includes(normalized)
+      p.id.toLowerCase().includes(normalized) ||
+      p.sku?.toLowerCase().includes(normalized)
   );
 });
 
 function resetForm() {
   formName.value = "";
   formCategory.value = "";
+  formSku.value = "";
   formPrice.value = "";
   formStock.value = "";
   formLowStockThreshold.value = "";
@@ -49,6 +52,7 @@ function openAddForm() {
 function openEditForm(product) {
   formName.value = product.name;
   formCategory.value = product.category;
+  formSku.value = product.sku || "";
   formPrice.value = String(product.price);
   formStock.value = String(product.stock || 0);
   formLowStockThreshold.value = String(product.lowStockThreshold || 0);
@@ -60,6 +64,7 @@ function submitAdd() {
   const result = productsStore.addProduct({
     name: formName.value,
     category: formCategory.value,
+    sku: formSku.value,
     price: formPrice.value,
     stock: formStock.value,
     lowStockThreshold: formLowStockThreshold.value,
@@ -72,6 +77,7 @@ function submitEdit() {
   const result = productsStore.updateProduct(editingProductId.value, {
     name: formName.value,
     category: formCategory.value,
+    sku: formSku.value,
     price: formPrice.value,
     stock: formStock.value,
     lowStockThreshold: formLowStockThreshold.value,
@@ -175,6 +181,10 @@ function confirmReset() {
             </datalist>
           </div>
           <div>
+            <label for="productSku" class="mb-1 block text-sm font-medium text-slate-700">Barcode / SKU</label>
+            <input id="productSku" v-model="formSku" type="text" placeholder="e.g. 10010001" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+          </div>
+          <div>
             <label for="productPrice" class="mb-1 block text-sm font-medium text-slate-700">Price ($)</label>
             <input id="productPrice" v-model="formPrice" type="number" step="0.01" min="0" placeholder="0.00" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
@@ -197,9 +207,9 @@ function confirmReset() {
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="text-lg font-semibold text-slate-800">Product Catalog</h2>
-            <p class="mt-1 text-sm text-slate-500">Filter products by name, category, or ID.</p>
+            <p class="mt-1 text-sm text-slate-500">Filter products by name, category, ID, or SKU.</p>
           </div>
-          <input v-model="searchTerm" type="text" placeholder="Search products..." class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 sm:max-w-xs" />
+          <input v-model="searchTerm" type="text" placeholder="Search name, category, ID, or SKU" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 sm:max-w-xs" />
         </div>
       </div>
 
@@ -208,6 +218,7 @@ function confirmReset() {
           <thead>
             <tr class="border-b border-slate-200 bg-slate-50">
               <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500">ID</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500">SKU</th>
               <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
               <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
               <th class="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Price</th>
@@ -218,6 +229,7 @@ function confirmReset() {
           <tbody class="divide-y divide-slate-200">
             <tr v-for="product in filteredProducts" :key="product.id" class="hover:bg-slate-50 transition-colors">
               <td class="px-5 py-3 text-slate-500 font-mono text-xs">{{ product.id }}</td>
+              <td class="px-5 py-3 font-mono text-xs text-slate-500">{{ product.sku || product.id }}</td>
               <td class="px-5 py-3 font-medium text-slate-800">{{ product.name }}</td>
               <td class="px-5 py-3"><span class="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">{{ product.category }}</span></td>
               <td class="px-5 py-3 text-right font-semibold text-blue-700">{{ formatCurrency(product.price) }}</td>
