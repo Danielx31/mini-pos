@@ -5,6 +5,7 @@ import LoginView from "../views/LoginView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import OrderHistoryView from "../views/OrderHistoryView.vue";
 import ProductManagementView from "../views/ProductManagementView.vue";
+import AnalyticsView from "../views/AnalyticsView.vue";
 
 const routes = [
   {
@@ -29,6 +30,12 @@ const routes = [
     path: "/products",
     name: ROUTE_NAMES.PRODUCTS,
     component: ProductManagementView,
+    meta: { requiresAuth: true, requiresRole: USER_ROLES.ADMIN },
+  },
+  {
+    path: "/analytics",
+    name: ROUTE_NAMES.ANALYTICS,
+    component: AnalyticsView,
     meta: { requiresAuth: true, requiresRole: USER_ROLES.ADMIN },
   },
 ];
