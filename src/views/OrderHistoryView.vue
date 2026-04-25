@@ -58,6 +58,17 @@ function confirmClearHistory() {
   if (!confirmed) return;
   ordersStore.clearHistory();
 }
+
+function confirmRefund(order) {
+  const confirmed = window.confirm(`Are you sure you want to refund order ${order.orderNumber}? This will restore inventory and cannot be undone.`);
+  if (!confirmed) return;
+  const result = ordersStore.refundOrder(order.orderNumber);
+  if (result.ok) {
+    alert(result.message);
+  } else {
+    alert(`Refund failed: ${result.message}`);
+  }
+}
 </script>
 
 <template>
@@ -109,8 +120,14 @@ function confirmClearHistory() {
                 </svg>
               </div>
               <div class="min-w-0">
-                <p class="truncate text-sm font-semibold text-slate-800">{{ order.orderNumber }}</p>
+                <div class="flex items-center gap-2">
+                  <p class="truncate text-sm font-semibold text-slate-800">{{ order.orderNumber }}</p>
+                  <span v-if="order.refunded" class="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-rose-100 text-rose-700">
+                    Refunded
+                  </span>
+                </div>
                 <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(order.checkedOutAt) }} · {{ order.itemCount }} {{ order.itemCount === 1 ? 'item' : 'items' }}</p>
+                <p v-if="order.refunded" class="mt-1 text-xs text-rose-600">Refunded on {{ formatDateTime(order.refundedAt) }}</p>
               </div>
             </div>
             <div class="flex items-center gap-3 text-slate-900">
@@ -192,6 +209,16 @@ function confirmClearHistory() {
 
             <!-- Receipt Actions -->
             <div class="mt-4 border-t border-slate-200 pt-4 flex gap-2 justify-end">
+              <button
+                v-if="!order.refunded"
+                @click="confirmRefund(order)"
+                class="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 transition"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Refund
+              </button>
               <button
                 @click="openReceiptModal(order)"
                 class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"

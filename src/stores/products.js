@@ -180,6 +180,17 @@ export const useProductsStore = defineStore("products", () => {
     }) || null;
   }
 
+  function incrementStock(productId, quantity) {
+    const product = products.value.find((p) => p.id === productId);
+    if (!product) {
+      return { ok: false, message: "Product not found." };
+    }
+
+    product.stock = (product.stock || 0) + quantity;
+    saveProductsToStorage();
+    return { ok: true, message: `Stock incremented for "${product.name}".` };
+  }
+
   function decrementStock(productId, quantity) {
     const product = products.value.find((p) => p.id === productId);
     if (!product) {
@@ -223,6 +234,7 @@ export const useProductsStore = defineStore("products", () => {
     deleteProduct,
     resetToDefaults,
     decrementStock,
+    incrementStock,
     checkStockAvailability,
     getProductStock,
     getProductByBarcode,

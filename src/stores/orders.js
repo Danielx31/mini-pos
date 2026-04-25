@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { useProductsStore } from "./products";
 
 const STORAGE_KEY = "mini_pos_orders";
 
@@ -37,11 +38,15 @@ export const useOrdersStore = defineStore("orders", () => {
   const totalOrders = computed(() => orders.value.length);
 
   const totalRevenue = computed(() => {
-    return orders.value.reduce((sum, order) => sum + order.total, 0);
+    return orders.value
+      .filter(order => !order.refunded)
+      .reduce((sum, order) => sum + order.total, 0);
   });
 
   const totalItemsSold = computed(() => {
-    return orders.value.reduce((sum, order) => sum + order.itemCount, 0);
+    return orders.value
+      .filter(order => !order.refunded)
+      .reduce((sum, order) => sum + order.itemCount, 0);
   });
 
   function loadOrdersFromStorage() {
@@ -72,6 +77,34 @@ export const useOrdersStore = defineStore("orders", () => {
     dateFilter.value = "";
   }
 
+  function refundOrder(orderNumber) {
+    const orderIndex = orders.value.findIndex(order => order.orderNumber === orderNumber);
+    if (orderIndex === -1) {
+      return { ok: false, message: "Order not found." };
+    }
+
+    const order = orders.value[orderIndex];
+    if (order.refunded) {
+      return { ok: false, message: "Order has already been refunded." };
+    }
+
+    // Mark order as refunded
+    order.refunded = true;
+    order.refundedAt = new Date().toISOString();
+
+    // Restore inventory
+    const productsStore = useProductsStore();
+    for (const item of order.items) {
+      const result = productsStore.incrementStock(item.productId, item.quantity);
+      if (!result.ok) {
+        console.error("Stock increment failed:", result.message);
+      }
+    }
+
+    saveOrdersToStorage();
+    return { ok: true, message: `Order ${orderNumber} has been refunded.` };
+  }
+
   return {
     orders,
     searchTerm,
@@ -83,5 +116,6 @@ export const useOrdersStore = defineStore("orders", () => {
     addOrder,
     clearHistory,
     clearFilters,
+    refundOrder,
   };
 });
