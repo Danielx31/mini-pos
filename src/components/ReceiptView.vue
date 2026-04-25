@@ -11,6 +11,10 @@ const props = defineProps({
 const { formatCurrency } = useCurrency();
 const { formatDateTime } = useDateTime();
 
+function getTaxLabel(order) {
+  return order.taxRateSummary || "8%";
+}
+
 // Parse ISO string to get readable date and time
 function getReceiptDate(isoString) {
   const date = new Date(isoString);
@@ -88,7 +92,7 @@ function getPaymentMethodLabel(method) {
       </div>
 
       <div class="flex justify-between text-xs text-slate-600">
-        <span>Tax (8%):</span>
+        <span>Tax ({{ getTaxLabel(order) }}):</span>
         <span>{{ formatCurrency(order.tax) }}</span>
       </div>
 

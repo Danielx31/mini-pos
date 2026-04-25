@@ -4,7 +4,8 @@ import { useOrdersStore } from "./orders";
 import { useProductsStore } from "./products";
 import { useCouponsStore } from "./coupons";
 import { usePaymentStore } from "./payment";
-import { TAX_RATE } from "../constants/routes";
+import { useTaxStore } from "./taxes";
+import { DEFAULT_TAX_RATE, formatTaxRate } from "../constants/taxes";
 
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");
@@ -15,6 +16,7 @@ export const usePosStore = defineStore("pos", () => {
 
   const productsStore = useProductsStore();
   const couponsStore = useCouponsStore();
+  const taxStore = useTaxStore();
   const products = computed(() => productsStore.products);
 
   const filteredProducts = computed(() => {
@@ -47,8 +49,39 @@ export const usePosStore = defineStore("pos", () => {
   const discountedSubtotal = computed(
     () => subtotal.value - discountAmount.value,
   );
-  const taxAmount = computed(() => discountedSubtotal.value * TAX_RATE);
+
+  const discountedRatio = computed(() => {
+    if (subtotal.value <= 0) {
+      return 0;
+    }
+    return Math.max(0, discountedSubtotal.value / subtotal.value);
+  });
+
+  const taxAmount = computed(() => {
+    return cartItems.value.reduce((sum, item) => {
+      const itemTotal = item.price * item.quantity * discountedRatio.value;
+      return sum + itemTotal * taxStore.getTaxRate(item.category);
+    }, 0);
+  });
+
   const grandTotal = computed(() => discountedSubtotal.value + taxAmount.value);
+
+  const taxRateSummary = computed(() => {
+    const rates = cartItems.value
+      .map((item) => taxStore.getTaxRate(item.category))
+      .filter((rate) => Number.isFinite(rate));
+
+    const uniqueRates = [...new Set(rates)];
+    if (uniqueRates.length === 0) {
+      return formatTaxRate(DEFAULT_TAX_RATE);
+    }
+
+    if (uniqueRates.length === 1) {
+      return formatTaxRate(uniqueRates[0]);
+    }
+
+    return "Variable rates";
+  });
 
   const totalItems = computed(() => {
     return cartItems.value.reduce((sum, item) => sum + item.quantity, 0);
@@ -76,6 +109,7 @@ export const usePosStore = defineStore("pos", () => {
     cartItems.value.push({
       productId: product.id,
       name: product.name,
+      category: product.category,
       price: product.price,
       quantity: 1,
     });
@@ -205,6 +239,7 @@ export const usePosStore = defineStore("pos", () => {
       discount,
       coupon: couponSnapshot,
       tax: taxAmount.value,
+      taxRateSummary: taxRateSummary.value,
       total: grandTotal.value,
       payment: paymentSnapshot,
       checkedOutAt: new Date().toISOString(),
@@ -244,6 +279,7 @@ export const usePosStore = defineStore("pos", () => {
     cartItems,
     subtotal,
     taxAmount,
+    taxRateSummary,
     grandTotal,
     totalItems,
     addToCart,

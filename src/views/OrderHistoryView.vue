@@ -13,6 +13,10 @@ const { formatCurrency } = useCurrency();
 const { formatDateTime } = useDateTime();
 const { generatePDF, printReceipt } = useReceiptPdf();
 
+function getTaxLabel(order) {
+  return order.taxRateSummary || "8%";
+}
+
 const expandedOrderId = ref(null);
 const selectedOrderForReceipt = ref(null);
 const isReceiptModalOpen = ref(false);
@@ -140,7 +144,7 @@ function confirmClearHistory() {
             <div class="mt-4 border-t border-slate-200 pt-4 text-sm">
               <div class="flex justify-between text-slate-600"><span>Subtotal</span><span>{{ formatCurrency(order.subtotal) }}</span></div>
               <div v-if="order.coupon" class="mt-2 flex justify-between text-emerald-600"><span>Discount ({{ order.coupon.code }})</span><span>-{{ formatCurrency(order.discount) }}</span></div>
-              <div class="mt-2 flex justify-between text-slate-600"><span>Tax (8%)</span><span>{{ formatCurrency(order.tax) }}</span></div>
+              <div class="mt-2 flex justify-between text-slate-600"><span>Tax ({{ getTaxLabel(order) }})</span><span>{{ formatCurrency(order.tax) }}</span></div>
               <div class="mt-3 flex justify-between text-base font-semibold text-slate-900"><span>Total</span><span>{{ formatCurrency(order.total) }}</span></div>
             </div>
 

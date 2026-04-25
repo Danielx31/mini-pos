@@ -1,14 +1,18 @@
 <script setup>
-import { ref, computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useProductsStore } from "../stores/products";
+import { useTaxStore } from "../stores/taxes";
 import { useCurrency } from "../composables/useFormatters";
 import AppNavbar from "../components/AppNavbar.vue";
 
 const productsStore = useProductsStore();
+const taxStore = useTaxStore();
 const { formatCurrency } = useCurrency();
 
 const searchTerm = ref("");
 const notice = ref(null);
+const taxNotice = ref(null);
+const taxRateInputs = ref({});
 
 const showAddForm = ref(false);
 const editingProductId = ref(null);
@@ -32,6 +36,17 @@ const filteredProducts = computed(() => {
       p.sku?.toLowerCase().includes(normalized)
   );
 });
+
+watch(
+  () => productsStore.categories,
+  (categories) => {
+    taxRateInputs.value = categories.reduce((acc, category) => {
+      acc[category] = taxStore.getTaxRate(category);
+      return acc;
+    }, {});
+  },
+  { immediate: true },
+);
 
 function resetForm() {
   formName.value = "";
@@ -102,6 +117,23 @@ function confirmReset() {
   notice.value = result;
   resetForm();
 }
+
+function updateCategoryTax(category) {
+  const result = taxStore.setTaxRate(category, taxRateInputs.value[category]);
+  taxNotice.value = result;
+}
+
+function resetTaxRates() {
+  const confirmed = window.confirm("Reset category tax rates to default values?");
+  if (!confirmed) return;
+
+  const result = taxStore.resetTaxRates();
+  taxNotice.value = result;
+  taxRateInputs.value = productsStore.categories.reduce((acc, category) => {
+    acc[category] = taxStore.getTaxRate(category);
+    return acc;
+  }, {});
+}
 </script>
 
 <template>
@@ -162,6 +194,45 @@ function confirmReset() {
               <p class="text-sm text-slate-500">Needs restocking</p>
             </div>
             <button class="rounded-full border border-red-300 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors" @click="openEditForm(product)">Restock</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-800">Category Tax Rates</h2>
+            <p class="mt-1 text-sm text-slate-500">Adjust tax rate by product category. Changes persist in local storage.</p>
+          </div>
+          <button class="rounded-2xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition" @click="resetTaxRates">Reset Tax Rates</button>
+        </div>
+
+        <div v-if="taxNotice" class="mt-4 rounded-2xl border px-4 py-3 text-sm flex items-center justify-between" :class="taxNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'">
+          <span>{{ taxNotice.message }}</span>
+          <button class="ml-3 font-medium hover:underline" @click="taxNotice = null">Dismiss</button>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div v-for="category in productsStore.categories" :key="category" class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-slate-800">{{ category }}</p>
+                <p class="text-xs text-slate-500">Current category rate</p>
+              </div>
+              <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{{ Math.round((taxStore.getTaxRate(category) ?? 0) * 100) }}%</span>
+            </div>
+            <div class="space-y-3">
+              <label class="text-xs font-medium text-slate-700">Set rate</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                v-model.number="taxRateInputs[category]"
+                class="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+              <button class="w-full rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition" @click="updateCategoryTax(category)">Save</button>
+            </div>
           </div>
         </div>
       </div>

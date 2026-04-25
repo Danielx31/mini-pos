@@ -286,7 +286,7 @@ function handlePrint() {
           <div class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4">
             <div class="flex justify-between text-sm text-slate-600"><span>Subtotal</span><span>{{ formatCurrency(posStore.subtotal) }}</span></div>
             <div v-if="posStore.appliedCoupon" class="mt-3 flex justify-between text-sm font-medium text-emerald-600"><span>Discount</span><span>-{{ formatCurrency(posStore.discountAmount) }}</span></div>
-            <div class="mt-3 flex justify-between text-sm text-slate-600"><span>Tax (8%)</span><span>{{ formatCurrency(posStore.taxAmount) }}</span></div>
+            <div class="mt-3 flex justify-between text-sm text-slate-600"><span>Tax ({{ posStore.taxRateSummary }})</span><span>{{ formatCurrency(posStore.taxAmount) }}</span></div>
             <div class="mt-4 flex justify-between text-base font-semibold text-slate-900"><span>Total</span><span>{{ formatCurrency(posStore.grandTotal) }}</span></div>
           </div>
 
