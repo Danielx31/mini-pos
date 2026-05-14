@@ -3,7 +3,7 @@ import { ref } from "vue";
 import { usePosStore } from "../stores/pos";
 import { useCouponsStore } from "../stores/coupons";
 import { usePaymentStore } from "../stores/payment";
-import { useCurrency } from "../composables/useFormatters";
+import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { useReceiptPdf } from "../composables/useReceiptPdf";
 import AppNavbar from "../components/AppNavbar.vue";
 import PaymentModal from "../components/PaymentModal.vue";
@@ -13,9 +13,12 @@ const posStore = usePosStore();
 const couponsStore = useCouponsStore();
 const paymentStore = usePaymentStore();
 const { formatCurrency } = useCurrency();
+const { formatDateTime } = useDateTime();
 const { generatePDF, printReceipt } = useReceiptPdf();
 const checkoutNotice = ref(null);
 const barcodeInput = ref("");
+const parkedCustomerLabel = ref("");
+const parkedOrderNote = ref("");
 
 const isReceiptModalOpen = ref(false);
 const selectedOrder = ref(null);
@@ -71,6 +74,38 @@ function checkoutSale() {
   }
   
   paymentStore.openPaymentModal();
+}
+
+function holdCurrentOrder() {
+  const result = posStore.parkCurrentOrder({
+    customerLabel: parkedCustomerLabel.value,
+    note: parkedOrderNote.value,
+  });
+
+  if (result.ok) {
+    parkedCustomerLabel.value = "";
+    parkedOrderNote.value = "";
+  }
+
+  checkoutNotice.value = result;
+}
+
+function recallParkedOrder(holdNumber) {
+  const result = posStore.recallParkedOrder(holdNumber);
+  checkoutNotice.value = result;
+}
+
+function removeParkedOrder(holdNumber) {
+  const confirmed = window.confirm(
+    `Remove parked order ${holdNumber}? This action cannot be undone.`,
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const result = posStore.removeParkedOrder(holdNumber);
+  checkoutNotice.value = result;
 }
 
 function handlePaymentConfirm() {
@@ -290,8 +325,69 @@ function handlePrint() {
             <div class="mt-4 flex justify-between text-base font-semibold text-slate-900"><span>Total</span><span>{{ formatCurrency(posStore.grandTotal) }}</span></div>
           </div>
 
+          <div class="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-sm font-medium text-slate-700">Hold Details (Optional)</p>
+            <div class="mt-3 space-y-2">
+              <input
+                v-model="parkedCustomerLabel"
+                type="text"
+                maxlength="60"
+                placeholder="Customer name or reference"
+                class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+              />
+              <textarea
+                v-model="parkedOrderNote"
+                maxlength="140"
+                rows="2"
+                placeholder="Short note (e.g. waiting for one more item)"
+                class="w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+          </div>
+
+          <div class="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-700">Parked Orders</p>
+              <span class="inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">{{ posStore.totalParkedOrders }}</span>
+            </div>
+
+            <div class="mt-3 space-y-3" v-if="posStore.parkedOrders.length > 0">
+              <div v-for="parkedOrder in posStore.parkedOrders" :key="parkedOrder.holdNumber" class="rounded-2xl border border-slate-200 bg-white p-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold text-slate-900">{{ parkedOrder.holdNumber }}</p>
+                    <p v-if="parkedOrder.customerLabel" class="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">{{ parkedOrder.customerLabel }}</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(parkedOrder.parkedAt) }} · {{ parkedOrder.itemCount }} {{ parkedOrder.itemCount === 1 ? 'item' : 'items' }}</p>
+                    <p v-if="parkedOrder.note" class="mt-1 text-xs text-slate-600">{{ parkedOrder.note }}</p>
+                    <p class="mt-2 text-sm font-medium text-slate-800">{{ formatCurrency(parkedOrder.total) }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                    @click="removeParkedOrder(parkedOrder.holdNumber)"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  class="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                  @click="recallParkedOrder(parkedOrder.holdNumber)"
+                >
+                  Recall Order
+                </button>
+              </div>
+            </div>
+
+            <p v-else class="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-xs text-slate-500">
+              No parked orders yet.
+            </p>
+          </div>
+
           <div class="mt-5 grid gap-3">
             <button class="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0" @click="checkoutSale">Checkout</button>
+            <button class="rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0" @click="holdCurrentOrder">Hold Order</button>
             <button class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" :disabled="posStore.cartItems.length === 0" @click="posStore.clearCart()">Clear Cart</button>
           </div>
 

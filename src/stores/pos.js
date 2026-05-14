@@ -7,12 +7,17 @@ import { usePaymentStore } from "./payment";
 import { useTaxStore } from "./taxes";
 import { DEFAULT_TAX_RATE, formatTaxRate } from "../constants/taxes";
 
+const PARKED_ORDERS_STORAGE_KEY = "mini_pos_parked_orders";
+const HOLD_LABEL_MAX_LENGTH = 60;
+const HOLD_NOTE_MAX_LENGTH = 140;
+
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");
   const cartItems = ref([]);
   const appliedCoupon = ref(null);
   const couponCode = ref("");
   const couponError = ref("");
+  const parkedOrders = ref(loadParkedOrdersFromStorage());
 
   const productsStore = useProductsStore();
   const couponsStore = useCouponsStore();
@@ -86,6 +91,32 @@ export const usePosStore = defineStore("pos", () => {
   const totalItems = computed(() => {
     return cartItems.value.reduce((sum, item) => sum + item.quantity, 0);
   });
+
+  const totalParkedOrders = computed(() => parkedOrders.value.length);
+
+  function loadParkedOrdersFromStorage() {
+    try {
+      const stored = localStorage.getItem(PARKED_ORDERS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveParkedOrdersToStorage() {
+    localStorage.setItem(
+      PARKED_ORDERS_STORAGE_KEY,
+      JSON.stringify(parkedOrders.value),
+    );
+  }
+
+  function generateHoldNumber() {
+    return `HOLD-${Date.now()}`;
+  }
+
+  function sanitizeHoldText(value, maxLength) {
+    return String(value || "").trim().slice(0, maxLength);
+  }
 
   function addToCart(product) {
     // Check if product is in stock
@@ -213,6 +244,102 @@ export const usePosStore = defineStore("pos", () => {
     };
   }
 
+  function parkCurrentOrder(options = {}) {
+    if (cartItems.value.length === 0) {
+      return {
+        ok: false,
+        message: "Add at least one item before holding this order.",
+      };
+    }
+
+    const customerLabel = sanitizeHoldText(
+      options.customerLabel,
+      HOLD_LABEL_MAX_LENGTH,
+    );
+    const note = sanitizeHoldText(options.note, HOLD_NOTE_MAX_LENGTH);
+
+    const parkedOrder = {
+      holdNumber: generateHoldNumber(),
+      parkedAt: new Date().toISOString(),
+      itemCount: totalItems.value,
+      subtotal: subtotal.value,
+      discount: discountAmount.value,
+      tax: taxAmount.value,
+      total: grandTotal.value,
+      coupon: appliedCoupon.value ? { ...appliedCoupon.value } : null,
+      customerLabel,
+      note,
+      items: cartItems.value.map((item) => ({ ...item })),
+    };
+
+    parkedOrders.value.unshift(parkedOrder);
+    saveParkedOrdersToStorage();
+
+    clearCart();
+    usePaymentStore().resetPayment();
+
+    return {
+      ok: true,
+      message: `Order parked as ${parkedOrder.holdNumber}.`,
+    };
+  }
+
+  function recallParkedOrder(holdNumber) {
+    if (cartItems.value.length > 0) {
+      return {
+        ok: false,
+        message: "Clear the current cart before recalling a parked order.",
+      };
+    }
+
+    const orderIndex = parkedOrders.value.findIndex(
+      (order) => order.holdNumber === holdNumber,
+    );
+
+    if (orderIndex === -1) {
+      return {
+        ok: false,
+        message: "Parked order not found.",
+      };
+    }
+
+    const parkedOrder = parkedOrders.value[orderIndex];
+
+    cartItems.value = parkedOrder.items.map((item) => ({ ...item }));
+    appliedCoupon.value = parkedOrder.coupon ? { ...parkedOrder.coupon } : null;
+    couponCode.value = "";
+    couponError.value = "";
+
+    parkedOrders.value.splice(orderIndex, 1);
+    saveParkedOrdersToStorage();
+
+    return {
+      ok: true,
+      message: `Recalled ${holdNumber} into the current cart.`,
+    };
+  }
+
+  function removeParkedOrder(holdNumber) {
+    const orderIndex = parkedOrders.value.findIndex(
+      (order) => order.holdNumber === holdNumber,
+    );
+
+    if (orderIndex === -1) {
+      return {
+        ok: false,
+        message: "Parked order not found.",
+      };
+    }
+
+    parkedOrders.value.splice(orderIndex, 1);
+    saveParkedOrdersToStorage();
+
+    return {
+      ok: true,
+      message: `Removed parked order ${holdNumber}.`,
+    };
+  }
+
   function completeCheckout() {
     const paymentStore = usePaymentStore();
 
@@ -282,6 +409,8 @@ export const usePosStore = defineStore("pos", () => {
     taxRateSummary,
     grandTotal,
     totalItems,
+    parkedOrders,
+    totalParkedOrders,
     addToCart,
     updateQuantity,
     appliedCoupon,
@@ -296,5 +425,8 @@ export const usePosStore = defineStore("pos", () => {
     initiateCheckout,
     completeCheckout,
     addToCartByBarcode,
+    parkCurrentOrder,
+    recallParkedOrder,
+    removeParkedOrder,
   };
 });
