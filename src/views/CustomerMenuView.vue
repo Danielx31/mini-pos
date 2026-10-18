@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 type MenuProduct = {
   name: string;
   category: string;
+  icon: string | null;
   price: number;
 };
 
@@ -169,7 +170,7 @@ onMounted(loadMenu);
               <div class="relative flex h-36 items-center justify-center overflow-hidden" :class="categoryAppearance(product.category).background">
                 <div class="absolute -right-7 -top-9 h-32 w-32 rounded-full border-[1.5rem] border-white/40" aria-hidden="true" />
                 <div class="absolute -bottom-12 -left-8 h-28 w-28 rounded-full bg-white/30" aria-hidden="true" />
-                <span class="relative text-6xl transition duration-200 group-hover:scale-110" aria-hidden="true">{{ categoryAppearance(product.category).symbol }}</span>
+                <span class="relative text-6xl transition duration-200 group-hover:scale-110" aria-hidden="true">{{ product.icon || categoryAppearance(product.category).symbol }}</span>
               </div>
               <div class="flex min-h-48 flex-col p-5">
                 <span class="self-start rounded-full px-3 py-1 text-[0.7rem] font-black uppercase tracking-wider" :class="categoryAppearance(product.category).badge">{{ product.category }}</span>

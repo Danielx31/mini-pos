@@ -89,13 +89,14 @@ export async function initializeDatabase(db) {
       CREATE INDEX IF NOT EXISTS idx_login_attempts_until ON login_attempts(until);
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY, sku TEXT UNIQUE, name TEXT NOT NULL UNIQUE,
-        category TEXT NOT NULL, price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
+        category TEXT NOT NULL, icon TEXT, price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
         stock INTEGER NOT NULL CHECK(stock >= 0), low_stock_threshold INTEGER NOT NULL CHECK(low_stock_threshold >= 0),
         active INTEGER NOT NULL DEFAULT 1, archived_name TEXT, archived_sku TEXT
       );
       ALTER TABLE products ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_name TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_sku TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS icon TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_lower ON products (LOWER(sku));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_lower ON products (LOWER(name));
       CREATE TABLE IF NOT EXISTS product_delete_requests (
@@ -180,7 +181,7 @@ export async function initializeDatabase(db) {
 
 export function productDto(row) {
   return {
-    id: row.id, sku: row.sku ?? undefined, name: row.name, category: row.category,
+    id: row.id, sku: row.sku ?? undefined, name: row.name, category: row.category, icon: row.icon ?? null,
     price: row.price_cents / 100, stock: row.stock,
     lowStockThreshold: row.low_stock_threshold,
   };

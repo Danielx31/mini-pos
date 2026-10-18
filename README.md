@@ -57,6 +57,8 @@ Money is entered in pesos with at most two decimal places. Checkout, discounts, 
 
 Only managers and admins can record refunds. Refunded orders remain in order history for review but are excluded from recorded sales totals, analytics charts, and product sales rankings.
 
+Managers and admins can choose a customer menu emoji when adding or editing a product in **Products**. The icon appears on the public menu while the product is in stock. Existing products and products set to **Category default** keep their category icon. Run `npm --prefix server run migrate` with the direct PostgreSQL connection before deploying this change to an existing database; the migration adds a nullable icon column without changing existing products.
+
 For expired items found during a manual shelf check, managers and admins can use **Products → Dispose expired**. Enter the number of units to discard, with optional package expiry date and note. Mini POS subtracts those units from sellable stock and records who disposed of them and when; it does not create a sale or change sales totals. The latest 100 entries are visible in **Expired stock disposal history**. When stock reaches zero, the product no longer appears on the customer menu and checkout rejects it. Products do not track separate expiry dates for individual batches, so choose the quantity you inspected.
 
 When holding a sale, the server checks current products and stock and assigns a UUID-based hold number. Recall checks availability again and leaves the hold in place if an item is unavailable or stock is insufficient. If the network fails while saving or recalling, keep the POS tab open and use **Retry Hold Order** or **Retry Recall**. The cart is paused until that retry confirms the result; the same request ID prevents a duplicate hold or recall. A page reload clears this pending retry state, so check the parked order list before starting a new hold.
@@ -79,15 +81,15 @@ The importer copies users, password hashes, products, coupons, tax rates, orders
 
 ### Deploy on Vercel
 
-Connect a PostgreSQL provider through the Vercel Marketplace or another hosted PostgreSQL service. Set `DATABASE_URL` in the Vercel project environment. For Production, set `POS_PUBLIC_ORIGIN` to the exact HTTPS site origin; Preview deployments can omit it and use their request origin. Initialize the database from a trusted terminal using `create-user` or `import-sqlite` **before** deploying, with the same `DATABASE_URL`. Vercel builds the Vue frontend and routes `/api/v1/*` to a Node Function using `vercel.json`. Use a separate PostgreSQL database for Preview deployments so test sales do not enter production. The function does not run schema initialization on requests.
+Connect a PostgreSQL provider through the Vercel Marketplace or another hosted PostgreSQL service. Set `DATABASE_URL` in the Vercel project environment. For Production, set `POS_PUBLIC_ORIGIN` to the exact HTTPS site origin; Preview deployments can omit it and use their request origin. Initialize the database from a trusted terminal using `create-user` or `import-sqlite` **before** deploying, with the same `DATABASE_URL`. Vercel builds the Vue frontend and routes `/api/v1/*` to a Node Function using `vercel.json`. Use a separate PostgreSQL database for Preview deployments so test sales do not enter production. The function also initializes the schema on cold start.
 
-Before deploying catalog or utang changes to an existing Vercel database, run `npm --prefix server run migrate` from a trusted terminal with `.env.local` pointing to that database. The command uses the direct PostgreSQL URL and adds the archive, approval, and utang tables without removing existing products or sales. Test it against a Neon development branch first, then run it against production and redeploy Vercel. The Vercel Function does not run schema initialization on requests.
+Before deploying catalog or utang changes to an existing Vercel database, run `npm --prefix server run migrate` from a trusted terminal with `.env.local` pointing to that database. The command uses the direct PostgreSQL URL and adds the archive, approval, and utang tables without removing existing products or sales. Test it against a Neon development branch first, then run it against production and redeploy Vercel. This keeps schema changes under your control rather than waiting for a Vercel cold start.
 
 For an IIS deployment, run `npm run build` and `npm run server` with `NODE_ENV=production` and `POS_PUBLIC_ORIGIN` set to the site's exact HTTPS origin. The Node server serves `dist` and the API on port 3000. On IIS, install URL Rewrite and Application Request Routing, enable proxying, terminate HTTPS at IIS, and use the generated `dist/web.config` to forward all requests to the Node process. Set `PORT` if port 3000 is unavailable, and update `public/web.config` and `vite.config.js` accordingly.
 
 Existing browser `localStorage` records are left untouched and are not automatically imported. Back up the old browser data before switching a live register. A fresh PostgreSQL database starts with an empty product catalog and sample coupons; create a first user with the command above, then add your own products in **Products**.
 
-Run the API checks with `npm run test:server` and the frontend build with `npm run build`.
+Run the full quality gate with `npm run check` before deploying.
 
 ## Tech Stack & Syntax
 
@@ -122,8 +124,9 @@ This project uses the following technologies and syntax patterns:
 
 ### Development Tools
 
-- **ESLint + Prettier** for code quality
-- **Vitest** for unit testing (when added)
+- **ESLint** for JavaScript, TypeScript, and Vue linting
+- **vue-tsc** for TypeScript and typed Vue component checks
+- **Node.js test runner** for API and frontend regression tests
 
 ## Project Structure
 
@@ -206,6 +209,18 @@ npm run build
 ```bash
 npm run preview
 ```
+
+## Quality checks
+
+Install both lockfiles, then run the same checks used by GitHub Actions:
+
+```powershell
+npm ci
+npm ci --prefix server
+npm run check
+```
+
+`npm run check` runs ESLint, Vue/TypeScript type checking, frontend and API tests, and a production build. Each check can also run separately with `npm run lint`, `npm run typecheck`, `npm test`, or `npm run build`. API tests use an in-memory PostgreSQL stand-in and do not connect to Neon. Type checking currently covers the TypeScript modules and typed Vue components; the remaining JavaScript files are linted and can be converted incrementally. GitHub Actions runs these checks on pushes and pull requests.
 
 ## Architecture Decisions
 

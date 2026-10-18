@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { openDatabase, initializeDatabase, productDto, couponDto } from "./db.js";
 import { formatPercentRate, fromCents, lineDiscountCents, parseCents, percentageCents, taxCents as taxCentsForLine } from "../../shared/money.js";
+import { PRODUCT_ICON_VALUES } from "../../shared/product-icons.js";
 import { hashPassword, verifyPassword, randomToken, hashToken, cookieValue, clearCookie, SESSION_SECONDS } from "./security.js";
 
 const DEFAULT_TAX_RATE = 0.08;
@@ -335,14 +336,17 @@ export function createApp(db, options = {}) {
   app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
   app.get("/api/v1/menu", async (_req, res, next) => {
     try {
-      const products = await db.prepare("SELECT name,category,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all();
-      res.json(products.map((product) => ({ name: product.name, category: product.category, price: product.price_cents / 100 })));
+      const products = await db.prepare("SELECT name,category,icon,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all();
+      res.json(products.map((product) => ({ name: product.name, category: product.category, icon: product.icon ?? null, price: product.price_cents / 100 })));
     } catch (error) { next(error); }
   });
   app.get("/api/v1/products", auth, async (_req, res) => res.json(await readProducts(db)));
   function productInput(body) {
+    const icon = body?.icon ?? null;
+    requireValid(icon === null || PRODUCT_ICON_VALUES.has(icon), "Choose a supported product icon or use the category default.");
     return {
       name: text(body?.name, 100, "Name"), category: text(body?.category, 80, "Category"),
+      icon,
       sku: optionalText(body?.sku, 80) || null, priceCents: cents(body?.price, "Price"),
       stock: wholeNumber(body?.stock, "Stock"), threshold: wholeNumber(body?.lowStockThreshold, "Low stock threshold"),
     };
@@ -351,16 +355,16 @@ export function createApp(db, options = {}) {
     try {
       const input = productInput(req.body);
       const id = `p-${randomUUID()}`;
-      await db.prepare("INSERT INTO products (id,sku,name,category,price_cents,stock,low_stock_threshold) VALUES (?,?,?,?,?,?,?)").run(id, input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold);
-      res.status(201).json({ ok: true, message: `\"${input.name}\" added successfully.`, products: await readProducts(db) });
+      await db.prepare("INSERT INTO products (id,sku,name,category,icon,price_cents,stock,low_stock_threshold) VALUES (?,?,?,?,?,?,?,?)").run(id, input.sku, input.name, input.category, input.icon, input.priceCents, input.stock, input.threshold);
+      res.status(201).json({ ok: true, message: `"${input.name}" added successfully.`, products: await readProducts(db) });
     } catch (error) { next(error); }
   });
   app.put("/api/v1/products/:id", auth, manager, async (req, res, next) => {
     try {
       const input = productInput(req.body);
-      const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=? AND active=1").run(input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold, req.params.id);
+      const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, icon=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=? AND active=1").run(input.sku, input.name, input.category, input.icon, input.priceCents, input.stock, input.threshold, req.params.id);
       if (!result.changes) throw new ApiError(404, "Product not found.");
-      res.json({ ok: true, message: `\"${input.name}\" updated successfully.`, products: await readProducts(db) });
+      res.json({ ok: true, message: `"${input.name}" updated successfully.`, products: await readProducts(db) });
     } catch (error) { next(error); }
   });
   app.get("/api/v1/stock-disposals", auth, manager, async (_req, res, next) => {
@@ -415,7 +419,7 @@ export function createApp(db, options = {}) {
           .run(randomUUID(), product.id, product.name, req.session.user_id, new Date().toISOString(), product.id);
         return product;
       });
-      res.status(201).json({ ok: true, message: `Removal request for \"${result.name}\" sent to an admin.`, requests: await readPendingProductRequests(db, req.session.user_id) });
+      res.status(201).json({ ok: true, message: `Removal request for "${result.name}" sent to an admin.`, requests: await readPendingProductRequests(db, req.session.user_id) });
     } catch (error) {
       if (error.code === "23505") return next(new ApiError(409, "A removal request for this product is already pending admin approval."));
       next(error);
@@ -438,7 +442,7 @@ export function createApp(db, options = {}) {
           .run(decision === "approve" ? "approved" : "rejected", req.session.user_id, new Date().toISOString(), pending.id);
         return pending;
       });
-      res.json({ ok: true, message: decision === "approve" ? `\"${request.product_name}\" removed from the active catalog.` : `Removal request for \"${request.product_name}\" rejected.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
+      res.json({ ok: true, message: decision === "approve" ? `"${request.product_name}" removed from the active catalog.` : `Removal request for "${request.product_name}" rejected.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
     } catch (error) { next(error); }
   });
   app.delete("/api/v1/products/:id", auth, admin, async (req, res, next) => {
@@ -452,7 +456,7 @@ export function createApp(db, options = {}) {
           .run(req.session.user_id, new Date().toISOString(), active.id);
         return active;
       });
-      res.json({ ok: true, message: `\"${product.name}\" removed from the active catalog. Past sales and refunds remain intact.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
+      res.json({ ok: true, message: `"${product.name}" removed from the active catalog. Past sales and refunds remain intact.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
     } catch (error) { next(error); }
   });
   app.delete("/api/v1/products", auth, admin, async (req, res, next) => {

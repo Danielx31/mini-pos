@@ -37,7 +37,7 @@ export function useReceiptPdf() {
       await html2pdf().set(pdfOptions).from(receiptElement).save();
     } catch (error) {
       console.error("Error generating PDF:", error);
-      throw new Error("Failed to generate PDF. Please try again.");
+      throw new Error("Failed to generate PDF. Please try again.", { cause: error });
     }
   }
 

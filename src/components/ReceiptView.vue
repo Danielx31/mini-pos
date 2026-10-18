@@ -1,8 +1,8 @@
 <script setup>
-import { useCurrency, useDateTime } from "../composables/useFormatters";
+import { useCurrency } from "../composables/useFormatters";
 import { lineTotal } from "../../shared/money.js";
 
-const props = defineProps({
+defineProps({
   order: {
     type: Object,
     required: true,
@@ -10,7 +10,6 @@ const props = defineProps({
 });
 
 const { formatCurrency } = useCurrency();
-const { formatDateTime } = useDateTime();
 
 function getTaxLabel(order) {
   return order.taxRateSummary || "8%";

@@ -10,7 +10,11 @@
     "server": "npm --prefix server start",
     "server:dev": "npm --prefix server run dev",
     "test:server": "npm --prefix server test",
-    "test:frontend": "node --test --test-concurrency=1 test/refund-reporting.test.js test/hold-recall.test.js test/money.test.js"
+    "test:frontend": "node --test --test-concurrency=1 test/refund-reporting.test.js test/hold-recall.test.js test/money.test.js",
+    "test": "npm run test:frontend && npm run test:server",
+    "lint": "eslint .",
+    "typecheck": "vue-tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "engines": {
     "node": ">=22.9"
@@ -31,7 +35,14 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^6.0.5",
-    "vite": "^8.0.4"
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.13.0",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.71.2",
+    "vite": "^8.0.4",
+    "vue-tsc": "^3.3.13"
   }
 }

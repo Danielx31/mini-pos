@@ -1,10 +1,12 @@
-<script setup>
+<script setup lang="ts">
+import { ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const mobileMenuOpen = ref(false);
 
 defineProps({
   showBack: {
@@ -14,6 +16,7 @@ defineProps({
 });
 
 async function handleLogout() {
+  mobileMenuOpen.value = false;
   await authStore.logout();
   router.push({ name: ROUTE_NAMES.POS });
 }
@@ -21,27 +24,34 @@ async function handleLogout() {
 
 <template>
   <header class="sticky top-0 z-30 bg-slate-900/95 border-b border-slate-800/20 shadow-sm backdrop-blur-xl">
-    <div class="max-w-7xl mx-auto flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-      <div class="flex items-center gap-3">
-        <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-600/20">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
+    <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:px-8">
+      <div class="flex items-center justify-between gap-3 lg:shrink-0">
+        <div class="flex min-w-0 items-center gap-3">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-600/20">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <h1 class="text-lg font-semibold text-white">Mini POS</h1>
+            <p class="truncate text-xs text-slate-400 lg:hidden">{{ authStore.displayName }} · {{ authStore.userRole }}</p>
+            <p class="hidden text-xs text-slate-400 lg:block">Fast checkout, inventory, and sales tracking.</p>
+          </div>
         </div>
-        <div>
-          <h1 class="text-lg font-semibold text-white">Mini POS</h1>
-          <p class="text-xs text-slate-400">Fast checkout, inventory, and sales tracking.</p>
-        </div>
+        <button type="button" class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:hidden" :aria-expanded="mobileMenuOpen" aria-controls="staff-navigation" :aria-label="mobileMenuOpen ? 'Close staff menu' : 'Open staff menu'" @click="mobileMenuOpen = !mobileMenuOpen">
+          <svg v-if="mobileMenuOpen" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
+          <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
       </div>
 
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div v-if="!showBack" class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm text-slate-200">
+      <nav id="staff-navigation" aria-label="Staff navigation" class="flex-col gap-3 lg:flex lg:flex-row lg:items-center" :class="mobileMenuOpen ? 'flex' : 'hidden'">
+        <div v-if="!showBack" class="hidden items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm text-slate-200 lg:inline-flex">
           <span class="font-medium text-white">Hello,</span>
           <span class="font-semibold text-white">{{ authStore.displayName }}</span>
           <span class="text-xs text-slate-400">({{ authStore.userRole }})</span>
         </div>
 
-        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        <div class="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
           <button
             v-if="showBack"
             class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
@@ -118,7 +128,7 @@ async function handleLogout() {
             Logout
           </button>
         </div>
-      </div>
+      </nav>
     </div>
   </header>
 </template>

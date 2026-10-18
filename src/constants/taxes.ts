@@ -1,0 +1,19 @@
+import { formatPercentRate } from "../../shared/money.js";
+
+export const DEFAULT_TAX_RATE = 0.08;
+
+export const CATEGORY_TAX_RATES: Record<string, number> = {
+  Food: 0.05,
+  Drinks: 0.08,
+  Sides: 0.08,
+  Snacks: 0.1,
+};
+
+export function getTaxRateForCategory(category?: string | null): number {
+  if (!category) return DEFAULT_TAX_RATE;
+  return CATEGORY_TAX_RATES[category] ?? DEFAULT_TAX_RATE;
+}
+
+export function formatTaxRate(rate?: number | null): string {
+  return formatPercentRate(rate ?? DEFAULT_TAX_RATE);
+}

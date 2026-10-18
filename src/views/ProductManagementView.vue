@@ -6,6 +6,7 @@ import { useTaxStore } from "../stores/taxes";
 import { useCurrency } from "../composables/useFormatters";
 import { formatTaxRate } from "../constants/taxes";
 import AppNavbar from "../components/AppNavbar.vue";
+import { PRODUCT_ICONS } from "../../shared/product-icons.js";
 
 const productsStore = useProductsStore();
 const authStore = useAuthStore();
@@ -31,6 +32,7 @@ const editingProductId = ref(null);
 
 const formName = ref("");
 const formCategory = ref("");
+const formIcon = ref(null);
 const formSku = ref("");
 const formPrice = ref("");
 const formStock = ref("");
@@ -70,6 +72,7 @@ watch(
 function resetForm() {
   formName.value = "";
   formCategory.value = "";
+  formIcon.value = null;
   formSku.value = "";
   formPrice.value = "";
   formStock.value = "";
@@ -86,6 +89,7 @@ function openAddForm() {
 function openEditForm(product) {
   formName.value = product.name;
   formCategory.value = product.category;
+  formIcon.value = product.icon ?? null;
   formSku.value = product.sku || "";
   formPrice.value = String(product.price);
   formStock.value = String(product.stock || 0);
@@ -98,6 +102,7 @@ async function submitAdd() {
   const result = await productsStore.addProduct({
     name: formName.value,
     category: formCategory.value,
+    icon: formIcon.value,
     sku: formSku.value,
     price: formPrice.value,
     stock: formStock.value,
@@ -111,6 +116,7 @@ async function submitEdit() {
   const result = await productsStore.updateProduct(editingProductId.value, {
     name: formName.value,
     category: formCategory.value,
+    icon: formIcon.value,
     sku: formSku.value,
     price: formPrice.value,
     stock: formStock.value,
@@ -330,6 +336,20 @@ async function resetTaxRates() {
             <label for="productThreshold" class="mb-1 block text-sm font-medium text-slate-700">Low Stock Alert</label>
             <input id="productThreshold" v-model="formLowStockThreshold" type="number" min="0" step="1" required placeholder="0" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
+          <fieldset class="sm:col-span-5">
+            <legend class="mb-1 text-sm font-medium text-slate-700">Customer menu icon</legend>
+            <p class="mb-3 text-xs text-slate-500">Choose the picture customers see for this product. The category default keeps the current menu icon.</p>
+            <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              <button type="button" :aria-pressed="formIcon === null" class="flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" :class="formIcon === null ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'" @click="formIcon = null">
+                <span class="text-2xl" aria-hidden="true">✦</span>
+                <span>Category default</span>
+              </button>
+              <button v-for="icon in PRODUCT_ICONS" :key="icon.value" type="button" :aria-pressed="formIcon === icon.value" :aria-label="`Use ${icon.label} icon`" class="flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" :class="formIcon === icon.value ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'" @click="formIcon = icon.value">
+                <span class="text-2xl" aria-hidden="true">{{ icon.value }}</span>
+                <span>{{ icon.label }}</span>
+              </button>
+            </div>
+          </fieldset>
           <div class="flex items-end gap-2 sm:col-span-5">
             <button type="submit" class="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 transition-colors">{{ editingProductId ? 'Save Changes' : 'Add Product' }}</button>
             <button type="button" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors" @click="resetForm">Cancel</button>
@@ -418,7 +438,7 @@ async function resetTaxRates() {
             <tr v-for="product in filteredProducts" :key="product.id" class="hover:bg-slate-50 transition-colors">
               <td class="px-5 py-3 text-slate-500 font-mono text-xs">{{ product.id }}</td>
               <td class="px-5 py-3 font-mono text-xs text-slate-500">{{ product.sku || product.id }}</td>
-              <td class="px-5 py-3 font-medium text-slate-800">{{ product.name }}</td>
+              <td class="px-5 py-3 font-medium text-slate-800"><span v-if="product.icon" class="mr-2" aria-hidden="true">{{ product.icon }}</span>{{ product.name }}</td>
               <td class="px-5 py-3"><span class="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">{{ product.category }}</span></td>
               <td class="px-5 py-3 text-right font-semibold text-blue-700">{{ formatCurrency(product.price) }}</td>
               <td class="px-5 py-3 text-right">

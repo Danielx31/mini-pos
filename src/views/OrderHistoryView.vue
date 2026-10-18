@@ -83,7 +83,7 @@ async function handleDownloadPDF() {
   try {
     isPdfGenerating.value = true;
     await generatePDF(selectedOrderForReceipt.value.orderNumber);
-  } catch (error) {
+  } catch {
     alert("Failed to generate PDF. Please try again.");
   } finally {
     isPdfGenerating.value = false;
