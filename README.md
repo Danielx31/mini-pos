@@ -42,14 +42,14 @@ After signing in as an administrator, open **Accounts** in the POS navigation to
 | Manager | Cashier access plus products, taxes, analytics, refunds, and order archives |
 | Admin | Manager access plus account creation |
 
-Start the API and Vue development server in separate terminals:
+Start the API and Vue development server in separate terminals. The development API command restarts automatically when you edit files in `server/src`:
 
 ```powershell
-npm run server
+npm run server:dev
 npm run dev
 ```
 
-Open the Vite URL (normally `http://localhost:5173`). Vite proxies `/api` to the Node server on port 3000. No default passwords or demo accounts are installed. PostgreSQL stores the application data; `DATABASE_URL` must be available to the Node process.
+Open the Vite URL (normally `http://localhost:5173`) or `/menu` to see the public customer menu. Staff sign in at `/admin-pos`; after sign-in, that same URL shows the POS. Vite proxies `/api` to the Node server on port 3000. No default passwords or demo accounts are installed. PostgreSQL stores the application data; `DATABASE_URL` must be available to the Node process.
 
 The API owns users, sessions, products, stock, orders, refunds, coupons, tax rates, and parked orders. Cashiers may sell and hold orders. Managers may also manage products and taxes, view analytics, refund sales, and archive or view archived orders. Administrators have all manager permissions and are the only role allowed to create accounts through the application. Archived orders remain in PostgreSQL and are available to managers and administrators from `GET /api/v1/orders/archive`. Products referenced by recorded sales or parked orders cannot be deleted. Managers and admins can use **Products → Clear Catalog** to remove all products when no sales or parked orders exist. The server recalculates sale totals and changes stock and orders in one PostgreSQL transaction. Card and e-wallet selections record an externally completed payment; this project does not charge a card or wallet.
 

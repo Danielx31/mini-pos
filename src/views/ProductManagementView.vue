@@ -256,7 +256,7 @@ async function resetTaxRates() {
             <input id="productSku" v-model="formSku" type="text" placeholder="e.g. 10010001" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
           <div>
-            <label for="productPrice" class="mb-1 block text-sm font-medium text-slate-700">Price ($)</label>
+            <label for="productPrice" class="mb-1 block text-sm font-medium text-slate-700">Price (₱)</label>
             <input id="productPrice" v-model="formPrice" type="number" step="0.01" min="0" placeholder="0.00" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
           <div>

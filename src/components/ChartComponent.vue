@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { Bar, Line, Doughnut } from "vue-chartjs";
+import { useCurrency } from "../composables/useFormatters";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -28,6 +29,8 @@ ChartJS.register(
   Filler
 );
 
+const { formatCurrency } = useCurrency();
+
 const props = defineProps({
   data: {
     type: Array,
@@ -43,7 +46,7 @@ const props = defineProps({
   },
   yAxisLabel: {
     type: String,
-    default: "Revenue ($)",
+    default: "Revenue (₱)",
   },
   title: {
     type: String,
@@ -139,8 +142,8 @@ const chartOptions = computed(() => ({
       displayColors: true,
       callbacks: {
         label: function (context) {
-          if (props.dataKey === "revenue" || props.dataKey === "revenue") {
-            return `$${context.parsed.y.toFixed(2)}`;
+          if (props.dataKey === "revenue") {
+            return formatCurrency(context.parsed.y ?? context.parsed);
           }
           return context.parsed.y;
         },
@@ -173,8 +176,8 @@ const chartOptions = computed(() => ({
               color: "#94a3b8",
               font: { size: 11 },
               callback(value) {
-                if (props.dataKey === "revenue" || props.dataKey === "revenue") {
-                  return `$${value}`;
+                if (props.dataKey === "revenue") {
+                  return formatCurrency(value);
                 }
                 return value;
               },

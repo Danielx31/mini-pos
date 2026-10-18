@@ -12,6 +12,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  isSubmitting: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["confirm", "cancel"]);
@@ -45,13 +49,14 @@ const isCash = computed(() => {
 });
 
 function confirmPayment() {
-  if (!isValidPayment.value) {
+  if (!isValidPayment.value || props.isSubmitting) {
     return;
   }
   emit("confirm");
 }
 
 function cancelPayment() {
+  if (props.isSubmitting) return;
   emit("cancel");
 }
 </script>
@@ -203,7 +208,7 @@ function cancelPayment() {
               <span
                 class="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-semibold text-slate-500"
               >
-                $
+                ₱
               </span>
               <input
                 id="cash-tendered"
@@ -249,16 +254,17 @@ function cancelPayment() {
       <div class="grid gap-3 sm:grid-cols-2">
         <button
           @click="cancelPayment"
-          class="rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+          :disabled="isSubmitting"
+          class="rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           @click="confirmPayment"
-          :disabled="!isValidPayment"
+          :disabled="!isValidPayment || isSubmitting"
           class="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Record Sale
+          {{ isSubmitting ? 'Recording sale...' : 'Record Sale' }}
         </button>
       </div>
     </div>

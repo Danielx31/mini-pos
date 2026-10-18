@@ -1,25 +1,28 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore, USER_ROLES } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
-import LoginView from "../views/LoginView.vue";
-import DashboardView from "../views/DashboardView.vue";
+import StaffPosView from "../views/StaffPosView.vue";
 import OrderHistoryView from "../views/OrderHistoryView.vue";
 import ProductManagementView from "../views/ProductManagementView.vue";
 import AnalyticsView from "../views/AnalyticsView.vue";
 import UserManagementView from "../views/UserManagementView.vue";
+import CustomerMenuView from "../views/CustomerMenuView.vue";
 
 const routes = [
   {
-    path: "/login",
-    name: ROUTE_NAMES.LOGIN,
-    component: LoginView,
-    meta: { requiresGuest: true },
+    path: "/menu",
+    alias: "/",
+    name: ROUTE_NAMES.MENU,
+    component: CustomerMenuView,
   },
   {
-    path: "/",
+    path: "/login",
+    redirect: { name: ROUTE_NAMES.POS },
+  },
+  {
+    path: "/admin-pos",
     name: ROUTE_NAMES.POS,
-    component: DashboardView,
-    meta: { requiresAuth: true },
+    component: StaffPosView,
   },
   {
     path: "/orders",
@@ -56,10 +59,6 @@ router.beforeEach((to, _from) => {
   const authStore = useAuthStore();
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    return { name: ROUTE_NAMES.LOGIN };
-  }
-
-  if (to.meta.requiresGuest && authStore.isAuthenticated) {
     return { name: ROUTE_NAMES.POS };
   }
 

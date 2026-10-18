@@ -1,7 +1,8 @@
-const CURRENCY_CODE = "USD";
-const LOCALE = "en-US";
+const CURRENCY_CODE = "PHP";
+const CURRENCY_LOCALE = "en-PH";
+const DATE_LOCALE = "en-US";
 
-const currencyFormatter = new Intl.NumberFormat(LOCALE, {
+const currencyFormatter = new Intl.NumberFormat(CURRENCY_LOCALE, {
   style: "currency",
   currency: CURRENCY_CODE,
 });
@@ -25,7 +26,7 @@ export function useCurrency() {
 export function useDateTime() {
   function formatDateTime(isoString) {
     const date = new Date(isoString);
-    return date.toLocaleDateString(LOCALE, dateTimeOptions);
+    return date.toLocaleDateString(DATE_LOCALE, dateTimeOptions);
   }
 
   return { formatDateTime };

@@ -1,10 +1,12 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { useCurrency } from "../composables/useFormatters";
 
 const DISCOUNT_TYPE_PERCENTAGE = "percentage";
 const DISCOUNT_TYPE_FIXED = "fixed";
 
 export const useCouponsStore = defineStore("coupons", () => {
+  const { formatCurrency } = useCurrency();
   const coupons = ref([]);
   const activeCoupons = computed(() => coupons.value.filter((coupon) => coupon.active));
   const totalCoupons = computed(() => coupons.value.length);
@@ -23,6 +25,6 @@ export const useCouponsStore = defineStore("coupons", () => {
     if (!coupon || subtotal <= 0) return 0;
     return Math.min(subtotal, coupon.type === DISCOUNT_TYPE_PERCENTAGE ? subtotal * coupon.value / 100 : coupon.value);
   }
-  function formatCouponValue(coupon) { return coupon.type === DISCOUNT_TYPE_PERCENTAGE ? `${coupon.value}%` : `$${coupon.value.toFixed(2)}`; }
+  function formatCouponValue(coupon) { return coupon.type === DISCOUNT_TYPE_PERCENTAGE ? `${coupon.value}%` : formatCurrency(coupon.value); }
   return { coupons, activeCoupons, totalCoupons, DISCOUNT_TYPE_PERCENTAGE, DISCOUNT_TYPE_FIXED, validateCoupon, calculateDiscount, formatCouponValue };
 });

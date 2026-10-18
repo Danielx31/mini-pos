@@ -204,6 +204,12 @@ export function createApp(db, options = {}) {
   });
 
   app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
+  app.get("/api/v1/menu", async (_req, res, next) => {
+    try {
+      const products = await db.prepare("SELECT name,category,price_cents FROM products WHERE stock > 0 ORDER BY category,name").all();
+      res.json(products.map((product) => ({ name: product.name, category: product.category, price: product.price_cents / 100 })));
+    } catch (error) { next(error); }
+  });
   app.get("/api/v1/products", auth, async (_req, res) => res.json(await readProducts(db)));
   function productInput(body) {
     return {
@@ -299,10 +305,10 @@ export function createApp(db, options = {}) {
 
   app.post("/api/v1/orders", auth, async (req, res, next) => {
     try {
-      const order = await db.transaction(async () => {
+      const sale = await db.transaction(async () => {
         requireValid(typeof req.body?.checkoutKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.checkoutKey), "Invalid checkout request ID.");
         const previous = await db.prepare("SELECT payload_json FROM orders WHERE checkout_key=?").get(req.body.checkoutKey);
-        if (previous) return JSON.parse(previous.payload_json);
+        if (previous) return { order: JSON.parse(previous.payload_json), products: await readProducts(db), coupons: await readCoupons(db) };
         const summary = await quote(db, req.body?.items, req.body?.couponCode);
         const paymentMethod = req.body?.paymentMethod;
         requireValid(["cash", "card", "e-wallet"].includes(paymentMethod), "Invalid payment method.");
@@ -318,9 +324,9 @@ export function createApp(db, options = {}) {
           payment: { paymentMethod, cashTendered: tenderedCents === null ? null : tenderedCents / 100, change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100 },
         };
         await db.prepare("INSERT INTO orders (order_number,payload_json,created_at,created_by,checkout_key) VALUES (?,?,?,?,?)").run(payload.orderNumber, JSON.stringify(payload), payload.checkedOutAt, req.session.user_id, req.body.checkoutKey);
-        return payload;
+        return { order: payload, products: await readProducts(db), coupons: await readCoupons(db) };
       });
-      res.status(201).json({ ok: true, message: `Sale recorded as ${order.orderNumber}.`, order, products: await readProducts(db), coupons: await readCoupons(db) });
+      res.status(201).json({ ok: true, message: `Sale recorded as ${sale.order.orderNumber}.`, ...sale });
     } catch (error) {
       if (error.code === "23505" && error.constraint === "orders_checkout_key_key") {
         try {

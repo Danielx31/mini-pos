@@ -1,10 +1,9 @@
 <script setup>
 import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
 
-const router = useRouter();
 const authStore = useAuthStore();
 
 const username = ref("");
@@ -15,10 +14,7 @@ const showPassword = ref(false);
 async function handleLogin() {
   isLoading.value = true;
   try {
-    const success = await authStore.login(username.value.trim(), password.value);
-    if (success) {
-      router.push({ name: ROUTE_NAMES.POS });
-    }
+    await authStore.login(username.value.trim(), password.value);
   } finally {
     isLoading.value = false;
   }
@@ -93,6 +89,9 @@ async function handleLogin() {
         </button>
 
       </form>
+      <RouterLink :to="{ name: ROUTE_NAMES.MENU }" class="mt-5 block text-center text-sm font-semibold text-sky-200 underline-offset-4 hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-sky-400">
+        View the customer menu without signing in
+      </RouterLink>
     </div>
   </div>
 </template>

@@ -16,6 +16,7 @@ export const usePosStore = defineStore("pos", () => {
   const couponError = ref("");
   const parkedOrders = ref([]);
   const checkoutKey = ref(crypto.randomUUID());
+  const isPreparingCheckout = ref(false);
   const isCompletingCheckout = ref(false);
 
   const productsStore = useProductsStore();
@@ -207,7 +208,10 @@ export const usePosStore = defineStore("pos", () => {
     couponError.value = "";
   }
 
-  function initiateCheckout() {
+  async function initiateCheckout() {
+    if (isPreparingCheckout.value || isCompletingCheckout.value) {
+      return { ok: false, message: "Checkout is already in progress." };
+    }
     if (cartItems.value.length === 0) {
       return {
         ok: false,
@@ -215,10 +219,36 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
-    return {
-      ok: true,
-      message: "Ready to proceed with payment.",
-    };
+    isPreparingCheckout.value = true;
+    try {
+      const latestProducts = await api("/products");
+      if (!Array.isArray(latestProducts)) throw new Error("Could not check current stock. Please try again.");
+      if (cartItems.value.length === 0) return { ok: false, message: "Add at least one item before checkout." };
+      productsStore.products = latestProducts;
+      const byId = new Map(latestProducts.map((product) => [product.id, product]));
+      for (const item of cartItems.value) {
+        const product = byId.get(item.productId);
+        if (!product) return { ok: false, message: `"${item.name}" is no longer available. Remove it from the cart.` };
+        if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99) {
+          return { ok: false, message: `Invalid quantity for "${item.name}". Update the cart before checkout.` };
+        }
+        if (product.stock < item.quantity) {
+          return { ok: false, message: `Only ${product.stock} of "${product.name}" available. Update the cart before checkout.` };
+        }
+      }
+      let priceChanged = false;
+      for (const item of cartItems.value) {
+        const product = byId.get(item.productId);
+        priceChanged ||= item.price !== product.price || item.category !== product.category;
+        Object.assign(item, { name: product.name, category: product.category, price: product.price });
+      }
+      if (priceChanged) return { ok: false, message: "Product prices or taxes changed. Review the updated cart, then check out again." };
+      return { ok: true, message: "Ready to proceed with payment." };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    } finally {
+      isPreparingCheckout.value = false;
+    }
   }
 
   async function parkCurrentOrder(options = {}) {
@@ -290,6 +320,9 @@ export const usePosStore = defineStore("pos", () => {
         paymentMethod: paymentStore.paymentMethod,
         cashTendered: paymentStore.cashTendered,
       } });
+      if (!result.ok || !result.order?.orderNumber || !Array.isArray(result.products) || !Array.isArray(result.coupons)) {
+        throw new Error("Could not confirm the sale. Please retry checkout to check its status.");
+      }
       productsStore.products = result.products;
       couponsStore.coupons = result.coupons;
       useOrdersStore().addOrder(result.order);
@@ -324,6 +357,8 @@ export const usePosStore = defineStore("pos", () => {
     applyCoupon,
     removeCoupon,
     initiateCheckout,
+    isPreparingCheckout,
+    isCompletingCheckout,
     completeCheckout,
     addToCartByBarcode,
     parkCurrentOrder,

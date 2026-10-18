@@ -6,7 +6,7 @@ const transactionClient = new AsyncLocalStorage();
 
 export const DEFAULT_COUPONS = [
   ["SAVE10", "10% off your order", "percentage", 10, 0, null],
-  ["FLAT5", "$5 off orders over $20", "fixed", 500, 2000, null],
+  ["FLAT5", "₱5 off orders over ₱20", "fixed", 500, 2000, null],
   ["WELCOME20", "20% off one order", "percentage", 20, 1000, 1],
 ];
 
@@ -134,8 +134,11 @@ export function productDto(row) {
 }
 
 export function couponDto(row) {
+  const description = row.code === "FLAT5" && row.description === "$5 off orders over $20"
+    ? "₱5 off orders over ₱20"
+    : row.description;
   return {
-    id: row.id, code: row.code, description: row.description, type: row.type,
+    id: row.id, code: row.code, description, type: row.type,
     value: row.type === "fixed" ? row.value / 100 : row.value,
     minOrderAmount: row.min_order_cents / 100, maxUses: row.max_uses,
     usedCount: row.used_count, active: Boolean(row.active), expiresAt: row.expires_at,

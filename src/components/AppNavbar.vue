@@ -1,5 +1,5 @@
 <script setup>
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { ROUTE_NAMES } from "../constants/routes";
 
@@ -15,7 +15,7 @@ defineProps({
 
 async function handleLogout() {
   await authStore.logout();
-  router.push({ name: ROUTE_NAMES.LOGIN });
+  router.push({ name: ROUTE_NAMES.POS });
 }
 </script>
 
@@ -94,6 +94,13 @@ async function handleLogout() {
               Orders
             </button>
           </template>
+
+          <RouterLink
+            :to="{ name: ROUTE_NAMES.MENU }"
+            class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
+          >
+            Customer menu
+          </RouterLink>
 
           <button
             class="inline-flex items-center gap-2 rounded-full border border-red-500 bg-slate-900 px-3 py-2 text-sm font-medium text-red-200 hover:border-red-400 hover:text-white transition"

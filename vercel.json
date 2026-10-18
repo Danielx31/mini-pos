@@ -5,6 +5,8 @@
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "/api/index?path=:path*" },
     { "source": "/login", "destination": "/index.html" },
+    { "source": "/menu", "destination": "/index.html" },
+    { "source": "/admin-pos", "destination": "/index.html" },
     { "source": "/orders", "destination": "/index.html" },
     { "source": "/products", "destination": "/index.html" },
     { "source": "/analytics", "destination": "/index.html" },

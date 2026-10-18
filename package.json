@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "npm --prefix server start",
+    "server:dev": "npm --prefix server run dev",
     "test:server": "npm --prefix server test"
   },
   "engines": {

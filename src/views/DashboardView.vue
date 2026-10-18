@@ -65,8 +65,8 @@ function increaseQuantity(item) {
   }
 }
 
-function checkoutSale() {
-  const result = posStore.initiateCheckout();
+async function checkoutSale() {
+  const result = await posStore.initiateCheckout();
   
   if (!result.ok) {
     checkoutNotice.value = result;
@@ -388,9 +388,9 @@ function handlePrint() {
           </div>
 
           <div class="mt-5 grid gap-3">
-            <button class="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0" @click="checkoutSale">Checkout</button>
-            <button class="rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0" @click="holdCurrentOrder">Hold Order</button>
-            <button class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" :disabled="posStore.cartItems.length === 0" @click="posStore.clearCart()">Clear Cart</button>
+            <button class="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="checkoutSale">{{ posStore.isPreparingCheckout ? 'Checking stock...' : 'Checkout' }}</button>
+            <button class="rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="holdCurrentOrder">Hold Order</button>
+            <button class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="posStore.clearCart()">Clear Cart</button>
           </div>
 
           <div v-if="checkoutNotice" class="mt-4 rounded-2xl border px-3 py-3 text-sm" :class="checkoutNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'">{{ checkoutNotice.message }}</div>
@@ -403,6 +403,7 @@ function handlePrint() {
       v-if="paymentStore.isPaymentModalOpen"
       :total-amount="posStore.grandTotal"
       :error-message="checkoutNotice?.ok === false ? checkoutNotice.message : ''"
+      :is-submitting="posStore.isCompletingCheckout"
       @confirm="handlePaymentConfirm"
       @cancel="handlePaymentCancel"
     />
