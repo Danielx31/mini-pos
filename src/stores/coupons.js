@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { useCurrency } from "../composables/useFormatters";
 import { fromCents, percentageCents, toCents } from "../../shared/money.js";
+import { api } from "../lib/api";
 
 const DISCOUNT_TYPE_PERCENTAGE = "percentage";
 const DISCOUNT_TYPE_FIXED = "fixed";
@@ -28,5 +29,18 @@ export const useCouponsStore = defineStore("coupons", () => {
   }
   function calculateDiscount(coupon, subtotal) { return fromCents(calculateDiscountCents(coupon, toCents(subtotal))); }
   function formatCouponValue(coupon) { return coupon.type === DISCOUNT_TYPE_PERCENTAGE ? `${coupon.value}%` : formatCurrency(coupon.value); }
-  return { coupons, activeCoupons, totalCoupons, DISCOUNT_TYPE_PERCENTAGE, DISCOUNT_TYPE_FIXED, validateCoupon, calculateDiscount, calculateDiscountCents, formatCouponValue };
+  async function loadCoupons() {
+    coupons.value = await api("/coupons");
+  }
+  async function saveCoupon(input, id = /** @type {number | null} */ (null)) {
+    const result = await api(id === null ? "/coupons" : `/coupons/${id}`, { method: id === null ? "POST" : "PUT", body: input });
+    coupons.value = result.coupons;
+    return result;
+  }
+  async function deleteCoupon(id) {
+    const result = await api(`/coupons/${id}`, { method: "DELETE" });
+    coupons.value = result.coupons;
+    return result;
+  }
+  return { coupons, activeCoupons, totalCoupons, DISCOUNT_TYPE_PERCENTAGE, DISCOUNT_TYPE_FIXED, validateCoupon, calculateDiscount, calculateDiscountCents, formatCouponValue, loadCoupons, saveCoupon, deleteCoupon };
 });

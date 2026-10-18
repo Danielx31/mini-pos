@@ -43,6 +43,12 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: [USER_ROLES.ADMIN, USER_ROLES.MANAGER] },
   },
   {
+    path: "/coupons",
+    name: ROUTE_NAMES.COUPONS,
+    component: () => import("../views/CouponManagementView.vue"),
+    meta: { requiresAuth: true, allowedRoles: [USER_ROLES.ADMIN, USER_ROLES.MANAGER] },
+  },
+  {
     path: "/analytics",
     name: ROUTE_NAMES.ANALYTICS,
     component: AnalyticsView,

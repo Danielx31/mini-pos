@@ -77,6 +77,15 @@ async function handleLogout() {
 
             <button
               v-if="authStore.canManage"
+              type="button"
+              class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-100"
+              @click="router.push({ name: ROUTE_NAMES.COUPONS })"
+            >
+              Coupons
+            </button>
+
+            <button
+              v-if="authStore.canManage"
               class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
               @click="router.push({ name: ROUTE_NAMES.ANALYTICS })"
             >

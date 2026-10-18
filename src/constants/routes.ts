@@ -4,6 +4,7 @@ export const ROUTE_NAMES = Object.freeze({
   ORDERS: "orders",
   CREDITS: "credits",
   PRODUCTS: "products",
+  COUPONS: "coupons",
   ANALYTICS: "analytics",
   USERS: "users",
 } as const);

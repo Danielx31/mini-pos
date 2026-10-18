@@ -87,6 +87,37 @@ async function readCoupons(db) {
   return (await db.prepare("SELECT * FROM coupons ORDER BY id").all()).map(couponDto);
 }
 
+function couponExpiry(value) {
+  if (value === null || value === undefined || value === "") return null;
+  requireValid(typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value), "Expiry must be a valid date.");
+  const [year, month, day] = value.split("-").map(Number);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  requireValid(calendarDate.getUTCFullYear() === year && calendarDate.getUTCMonth() === month - 1 && calendarDate.getUTCDate() === day, "Expiry must be a valid date.");
+  // Coupons remain valid through the selected calendar day in the Philippines.
+  return `${value}T23:59:59.999+08:00`;
+}
+
+function couponInput(body) {
+  const code = text(body?.code, 32, "Coupon code").toUpperCase();
+  requireValid(/^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(code), "Coupon code must be 3 to 32 letters, numbers, underscores, or hyphens.");
+  const description = text(body?.description, 200, "Description");
+  const type = body?.type;
+  requireValid(type === "percentage" || type === "fixed", "Choose a percentage or fixed peso discount.");
+  const value = type === "fixed" ? cents(body?.value, "Discount") : wholeNumber(body?.value, "Percentage");
+  requireValid(type === "fixed" ? value > 0 : value >= 1 && value <= 100, type === "fixed" ? "Discount must be greater than zero." : "Percentage must be a whole number from 1 to 100.");
+  const minOrderCents = cents(body?.minOrderAmount, "Minimum order");
+  const maxUses = body?.maxUses === null || body?.maxUses === undefined || body?.maxUses === "" ? null : wholeNumber(body.maxUses, "Usage limit");
+  requireValid(maxUses === null || maxUses > 0, "Usage limit must be a positive whole number.");
+  requireValid(body?.active === undefined || typeof body.active === "boolean", "Active must be true or false.");
+  return { code, description, type, value, minOrderCents, maxUses, active: body?.active === false ? 0 : 1, expiresAt: couponExpiry(body?.expiresAt) };
+}
+
+async function ensureCouponIsNotParked(db, code) {
+  const rows = await db.prepare("SELECT payload_json FROM holds WHERE recalled=0").all();
+  const usedByHold = rows.some((row) => JSON.parse(row.payload_json).coupon?.code?.toUpperCase() === code.toUpperCase());
+  if (usedByHold) throw new ApiError(409, "This coupon is in a parked order. Recall or remove that order before changing the coupon.");
+}
+
 async function readTaxRates(db) {
   return Object.fromEntries((await db.prepare("SELECT category, rate FROM tax_rates").all()).map(({ category, rate }) => [category, rate]));
 }
@@ -334,6 +365,52 @@ export function createApp(db, options = {}) {
   });
 
   app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
+  app.get("/api/v1/coupons", auth, manager, async (_req, res, next) => {
+    try { res.json(await readCoupons(db)); }
+    catch (error) { next(error); }
+  });
+  app.post("/api/v1/coupons", auth, manager, async (req, res, next) => {
+    try {
+      const input = couponInput(req.body);
+      await db.transaction(async () => {
+        if (await db.prepare("SELECT id FROM coupons WHERE LOWER(code)=LOWER(?)").get(input.code)) throw new ApiError(409, "Coupon code already exists.");
+        const { last_id: lastId } = await db.prepare("SELECT COALESCE(MAX(id),0) AS last_id FROM coupons").get();
+        await db.prepare("INSERT INTO coupons (id,code,description,type,value,min_order_cents,max_uses,active,expires_at) VALUES (?,?,?,?,?,?,?,?,?)")
+          .run(lastId + 1, input.code, input.description, input.type, input.value, input.minOrderCents, input.maxUses, input.active, input.expiresAt);
+      });
+      res.status(201).json({ ok: true, message: `Coupon ${input.code} created.`, coupons: await readCoupons(db) });
+    } catch (error) { next(error); }
+  });
+  app.put("/api/v1/coupons/:id", auth, manager, async (req, res, next) => {
+    try {
+      const id = wholeNumber(req.params.id, "Coupon ID");
+      const input = couponInput(req.body);
+      await db.transaction(async () => {
+        const previous = await db.prepare("SELECT * FROM coupons WHERE id=?").get(id);
+        if (!previous) throw new ApiError(404, "Coupon not found.");
+        await ensureCouponIsNotParked(db, previous.code);
+        requireValid(input.maxUses === null || input.maxUses >= previous.used_count, "Usage limit cannot be below the number already used.");
+        const matching = await db.prepare("SELECT id FROM coupons WHERE LOWER(code)=LOWER(?)").get(input.code);
+        if (matching && matching.id !== id) throw new ApiError(409, "Coupon code already exists.");
+        await db.prepare("UPDATE coupons SET code=?,description=?,type=?,value=?,min_order_cents=?,max_uses=?,active=?,expires_at=? WHERE id=?")
+          .run(input.code, input.description, input.type, input.value, input.minOrderCents, input.maxUses, input.active, input.expiresAt, id);
+      });
+      res.json({ ok: true, message: `Coupon ${input.code} updated.`, coupons: await readCoupons(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/coupons/:id", auth, manager, async (req, res, next) => {
+    try {
+      const id = wholeNumber(req.params.id, "Coupon ID");
+      const code = await db.transaction(async () => {
+        const coupon = await db.prepare("SELECT code FROM coupons WHERE id=?").get(id);
+        if (!coupon) throw new ApiError(404, "Coupon not found.");
+        await ensureCouponIsNotParked(db, coupon.code);
+        await db.prepare("DELETE FROM coupons WHERE id=?").run(id);
+        return coupon.code;
+      });
+      res.json({ ok: true, message: `Coupon ${code} deleted. Past sales keep their recorded discount.`, coupons: await readCoupons(db) });
+    } catch (error) { next(error); }
+  });
   app.get("/api/v1/menu", async (_req, res, next) => {
     try {
       const products = await db.prepare("SELECT name,category,icon,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all();
