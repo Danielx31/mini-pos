@@ -319,6 +319,9 @@ export const usePosStore = defineStore("pos", () => {
         couponCode: appliedCoupon.value?.code,
         paymentMethod: paymentStore.paymentMethod,
         cashTendered: paymentStore.cashTendered,
+        customerName: paymentStore.paymentMethod === "credit" ? paymentStore.customerName.trim() : undefined,
+        customerContact: paymentStore.paymentMethod === "credit" ? paymentStore.customerContact.trim() : undefined,
+        dueDate: paymentStore.paymentMethod === "credit" ? paymentStore.dueDate : undefined,
       } });
       if (!result.ok || !result.order?.orderNumber || !Array.isArray(result.products) || !Array.isArray(result.coupons)) {
         throw new Error("Could not confirm the sale. Please retry checkout to check its status.");

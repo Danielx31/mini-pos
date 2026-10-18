@@ -120,6 +120,20 @@ export async function initializeDatabase(db) {
         refunded_at TEXT, created_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id),
         checkout_key TEXT NOT NULL UNIQUE, archived INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS credit_sales (
+        order_number TEXT PRIMARY KEY REFERENCES orders(order_number),
+        customer_name TEXT NOT NULL, customer_contact TEXT, due_date TEXT,
+        total_cents INTEGER NOT NULL CHECK(total_cents > 0),
+        balance_cents INTEGER NOT NULL CHECK(balance_cents >= 0 AND balance_cents <= total_cents),
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS credit_payments (
+        id TEXT PRIMARY KEY, order_number TEXT NOT NULL REFERENCES credit_sales(order_number),
+        payment_key TEXT NOT NULL UNIQUE, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+        method TEXT NOT NULL CHECK(method = 'cash'), note TEXT,
+        received_by TEXT NOT NULL REFERENCES users(id), received_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_credit_payments_order ON credit_payments(order_number);
       CREATE TABLE IF NOT EXISTS holds (
         hold_number TEXT PRIMARY KEY, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
         created_by TEXT NOT NULL REFERENCES users(id)

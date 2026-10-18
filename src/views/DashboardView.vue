@@ -438,7 +438,8 @@ function handlePrint() {
           <div>
             <h2 class="text-lg font-semibold text-slate-900">Sale Recorded</h2>
             <p class="mt-1 text-sm text-slate-500">Receipt - {{ selectedOrder?.orderNumber }}</p>
-            <p v-if="selectedOrder?.payment?.paymentMethod !== 'cash'" class="mt-2 text-sm font-medium text-amber-800">{{ selectedOrder?.payment?.paymentMethod === 'card' ? 'Card' : 'E-wallet' }} method recorded. Mini POS did not charge or verify this payment.</p>
+            <p v-if="selectedOrder?.payment?.paymentMethod === 'credit'" class="mt-2 text-sm font-medium text-amber-800">Utang recorded for {{ selectedOrder.credit?.customerName }}. {{ formatCurrency(selectedOrder.credit?.balance ?? selectedOrder.total) }} remains unpaid.</p>
+            <p v-else-if="selectedOrder?.payment?.paymentMethod !== 'cash'" class="mt-2 text-sm font-medium text-amber-800">{{ selectedOrder?.payment?.paymentMethod === 'card' ? 'Card' : 'E-wallet' }} method recorded. Mini POS did not charge or verify this payment.</p>
             <p v-else class="mt-2 text-sm text-slate-600">Cash amount recorded.</p>
           </div>
           <button

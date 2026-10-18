@@ -78,8 +78,48 @@ async function readTaxRates(db) {
   return Object.fromEntries((await db.prepare("SELECT category, rate FROM tax_rates").all()).map(({ category, rate }) => [category, rate]));
 }
 
-async function readOrders(db) {
-  return (await db.prepare("SELECT * FROM orders WHERE archived=0 ORDER BY created_at DESC").all()).map((row) => ({ ...JSON.parse(row.payload_json), refunded: Boolean(row.refunded), refundedAt: row.refunded_at }));
+function creditDto(row) {
+  return {
+    customerName: row.customer_name, customerContact: row.customer_contact,
+    dueDate: row.due_date, total: row.total_cents / 100,
+    balance: row.balance_cents / 100,
+  };
+}
+
+function orderWithCredit(order, credit, refunded = false) {
+  if (!credit) return order;
+  const verificationStatus = refunded ? "cancelled" : credit.balance === 0 ? "paid" : credit.balance < credit.total ? "partially_paid" : "unpaid";
+  return { ...order, credit, payment: { ...order.payment, verificationStatus } };
+}
+
+async function readCreditSale(db, orderNumber) {
+  const row = await db.prepare("SELECT * FROM credit_sales WHERE order_number=?").get(orderNumber);
+  return row ? creditDto(row) : null;
+}
+
+async function readCreditPayments(db, orderNumber) {
+  const rows = await db.prepare(`SELECT payments.id,payments.amount_cents,payments.method,payments.note,
+    payments.received_at,users.display_name AS received_by
+    FROM credit_payments AS payments JOIN users ON users.id=payments.received_by
+    WHERE payments.order_number=? ORDER BY payments.received_at DESC`).all(orderNumber);
+  return rows.map((row) => ({
+    id: row.id, amount: row.amount_cents / 100, method: row.method,
+    note: row.note, receivedAt: row.received_at, receivedBy: row.received_by,
+  }));
+}
+
+async function readOrders(db, archived = 0) {
+  const rows = await db.prepare(`SELECT orders.*, credit_sales.customer_name,credit_sales.customer_contact,
+    credit_sales.due_date,credit_sales.total_cents,credit_sales.balance_cents
+    FROM orders LEFT JOIN credit_sales ON credit_sales.order_number=orders.order_number
+    WHERE orders.archived=? ORDER BY orders.created_at DESC`).all(archived);
+  return rows.map((row) => {
+    const credit = row.customer_name == null ? null : creditDto(row);
+    return {
+      ...orderWithCredit(JSON.parse(row.payload_json), credit, Boolean(row.refunded)),
+      refunded: Boolean(row.refunded), refundedAt: row.refunded_at,
+    };
+  });
 }
 
 async function readHolds(db) {
@@ -374,12 +414,22 @@ export function createApp(db, options = {}) {
       const sale = await db.transaction(async () => {
         requireValid(typeof req.body?.checkoutKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.checkoutKey), "Invalid checkout request ID.");
         const previous = await db.prepare("SELECT payload_json FROM orders WHERE checkout_key=?").get(req.body.checkoutKey);
-        if (previous) return { order: JSON.parse(previous.payload_json), products: await readProducts(db), coupons: await readCoupons(db) };
+        if (previous) {
+          const order = JSON.parse(previous.payload_json);
+          const credit = await readCreditSale(db, order.orderNumber);
+          return { order: orderWithCredit(order, credit), products: await readProducts(db), coupons: await readCoupons(db) };
+        }
         const summary = await quote(db, req.body?.items, req.body?.couponCode);
         const paymentMethod = req.body?.paymentMethod;
-        requireValid(["cash", "card", "e-wallet"].includes(paymentMethod), "Invalid payment method.");
+        requireValid(["cash", "card", "e-wallet", "credit"].includes(paymentMethod), "Invalid payment method.");
         const tenderedCents = paymentMethod === "cash" ? cents(req.body?.cashTendered, "Cash tendered") : null;
         if (paymentMethod === "cash" && tenderedCents < Math.round(summary.total * 100)) throw new ApiError(409, "Cash tendered is less than total.");
+        const customerName = paymentMethod === "credit" ? text(req.body?.customerName, 100, "Customer name") : null;
+        const customerContact = paymentMethod === "credit" ? optionalText(req.body?.customerContact, 100) || null : null;
+        const dueDate = paymentMethod === "credit" ? optionalText(req.body?.dueDate, 10) || null : null;
+        if (dueDate) requireValid(/^\d{4}-\d{2}-\d{2}$/.test(dueDate) && !Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)) && new Date(`${dueDate}T00:00:00Z`).toISOString().slice(0, 10) === dueDate, "Due date must be a valid date.");
+        const totalCents = Math.round(summary.total * 100);
+        if (paymentMethod === "credit") requireValid(totalCents > 0, "Utang requires an amount due greater than zero.");
         for (const item of summary.items) {
           const result = await db.prepare("UPDATE products SET stock=stock-CAST(? AS INTEGER) WHERE id=? AND stock>=CAST(? AS INTEGER)").run(item.quantity, item.productId, item.quantity);
           if (!result.changes) throw new ApiError(409, `Insufficient stock for ${item.name}.`);
@@ -389,12 +439,17 @@ export function createApp(db, options = {}) {
           ...summary, orderNumber: `ORD-${randomUUID()}`, checkedOutAt: new Date().toISOString(),
           payment: {
             paymentMethod,
-            verificationStatus: paymentMethod === "cash" ? "cash_recorded" : "not_verified",
+            verificationStatus: paymentMethod === "credit" ? "unpaid" : paymentMethod === "cash" ? "cash_recorded" : "not_verified",
             cashTendered: tenderedCents === null ? null : tenderedCents / 100,
             change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100,
           },
         };
         await db.prepare("INSERT INTO orders (order_number,payload_json,created_at,created_by,checkout_key) VALUES (?,?,?,?,?)").run(payload.orderNumber, JSON.stringify(payload), payload.checkedOutAt, req.session.user_id, req.body.checkoutKey);
+        if (paymentMethod === "credit") {
+          await db.prepare("INSERT INTO credit_sales (order_number,customer_name,customer_contact,due_date,total_cents,balance_cents,created_at) VALUES (?,?,?,?,?,?,?)")
+            .run(payload.orderNumber, customerName, customerContact, dueDate, totalCents, totalCents, payload.checkedOutAt);
+          payload.credit = { customerName, customerContact, dueDate, total: summary.total, balance: summary.total };
+        }
         return { order: payload, products: await readProducts(db), coupons: await readCoupons(db) };
       });
       res.status(201).json({ ok: true, message: `Sale recorded as ${sale.order.orderNumber}.`, ...sale });
@@ -404,7 +459,8 @@ export function createApp(db, options = {}) {
           const previous = await db.prepare("SELECT payload_json FROM orders WHERE checkout_key=?").get(req.body?.checkoutKey);
           if (previous) {
             const order = JSON.parse(previous.payload_json);
-            res.status(201).json({ ok: true, message: `Sale recorded as ${order.orderNumber}.`, order, products: await readProducts(db), coupons: await readCoupons(db) });
+            const credit = await readCreditSale(db, order.orderNumber);
+            res.status(201).json({ ok: true, message: `Sale recorded as ${order.orderNumber}.`, order: orderWithCredit(order, credit), products: await readProducts(db), coupons: await readCoupons(db) });
             return;
           }
         } catch (lookupError) { next(lookupError); return; }
@@ -414,7 +470,7 @@ export function createApp(db, options = {}) {
   });
   app.post("/api/v1/orders/:number/refund", auth, manager, async (req, res, next) => {
     try {
-      await db.transaction(async () => {
+      const hadCreditPayments = await db.transaction(async () => {
         const row = await db.prepare("SELECT * FROM orders WHERE order_number=?").get(req.params.number);
         if (!row) throw new ApiError(404, "Order not found.");
         if (row.refunded) throw new ApiError(409, "Order has already been refunded.");
@@ -424,17 +480,57 @@ export function createApp(db, options = {}) {
           if (!result.changes) throw new ApiError(409, `Cannot restore stock: product ${item.name} no longer exists.`);
         }
         await db.prepare("UPDATE orders SET refunded=1, refunded_at=? WHERE order_number=?").run(new Date().toISOString(), req.params.number);
+        await db.prepare("UPDATE credit_sales SET balance_cents=0 WHERE order_number=?").run(req.params.number);
+        return Boolean(await db.prepare("SELECT 1 FROM credit_payments WHERE order_number=? LIMIT 1").get(req.params.number));
       });
-      res.json({ ok: true, message: `Refund recorded for ${req.params.number}; inventory restored. Return any card or e-wallet funds outside Mini POS.`, products: await readProducts(db), orders: await readOrders(db) });
+      const repaymentNotice = hadCreditPayments ? " Return any collected utang repayments outside Mini POS." : "";
+      res.json({ ok: true, message: `Refund recorded for ${req.params.number}; inventory restored. Return any card or e-wallet funds outside Mini POS.${repaymentNotice}`, products: await readProducts(db), orders: await readOrders(db) });
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/orders/:number/credit-payments", auth, async (req, res, next) => {
+    try {
+      if (!await readCreditSale(db, req.params.number)) throw new ApiError(404, "Utang sale not found.");
+      res.json(await readCreditPayments(db, req.params.number));
+    } catch (error) { next(error); }
+  });
+  app.post("/api/v1/orders/:number/credit-payments", auth, async (req, res, next) => {
+    try {
+      const amountCents = cents(req.body?.amount, "Repayment amount");
+      requireValid(amountCents > 0, "Repayment amount must be greater than zero.");
+      requireValid(req.body?.method === "cash", "Only cash repayments can be recorded.");
+      requireValid(typeof req.body?.paymentKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.paymentKey), "Invalid repayment request ID.");
+      const note = optionalText(req.body?.note, 200) || null;
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT order_number,amount_cents FROM credit_payments WHERE payment_key=?").get(req.body.paymentKey);
+        if (previous) {
+          if (previous.order_number !== req.params.number || previous.amount_cents !== amountCents) throw new ApiError(409, "Repayment request ID was already used for a different payment.");
+          return { duplicate: true };
+        }
+        const order = await db.prepare("SELECT refunded FROM orders WHERE order_number=?").get(req.params.number);
+        const credit = await db.prepare("SELECT balance_cents FROM credit_sales WHERE order_number=?").get(req.params.number);
+        if (!order || !credit) throw new ApiError(404, "Utang sale not found.");
+        if (order.refunded) throw new ApiError(409, "Refunded sales cannot receive repayments.");
+        if (amountCents > credit.balance_cents) throw new ApiError(409, "Repayment exceeds the outstanding balance.");
+        const updated = await db.prepare("UPDATE credit_sales SET balance_cents=balance_cents-CAST(? AS INTEGER) WHERE order_number=? AND balance_cents>=CAST(? AS INTEGER)").run(amountCents, req.params.number, amountCents);
+        if (!updated.changes) throw new ApiError(409, "Repayment exceeds the outstanding balance.");
+        await db.prepare("INSERT INTO credit_payments (id,order_number,payment_key,amount_cents,method,note,received_by,received_at) VALUES (?,?,?,?,?,?,?,?)")
+          .run(randomUUID(), req.params.number, req.body.paymentKey, amountCents, "cash", note, req.session.user_id, new Date().toISOString());
+        return { duplicate: false };
+      });
+      res.status(result.duplicate ? 200 : 201).json({
+        ok: true, message: result.duplicate ? "Repayment was already recorded." : "Cash repayment recorded.",
+        credit: await readCreditSale(db, req.params.number),
+        payments: await readCreditPayments(db, req.params.number),
+        orders: await readOrders(db),
+      });
     } catch (error) { next(error); }
   });
   app.get("/api/v1/orders/archive", auth, manager, async (_req, res) => {
-    const archived = (await db.prepare("SELECT * FROM orders WHERE archived=1 ORDER BY created_at DESC").all()).map((row) => ({ ...JSON.parse(row.payload_json), refunded: Boolean(row.refunded), refundedAt: row.refunded_at }));
-    res.json(archived);
+    res.json(await readOrders(db, 1));
   });
   app.delete("/api/v1/orders", auth, manager, async (_req, res) => {
-    await db.prepare("UPDATE orders SET archived=1 WHERE archived=0").run();
-    res.json({ ok: true, orders: [] });
+    await db.prepare("UPDATE orders SET archived=1 WHERE archived=0 AND order_number NOT IN (SELECT order_number FROM credit_sales WHERE balance_cents>0)").run();
+    res.json({ ok: true, message: "Paid orders archived. Utang orders with a balance remain visible.", orders: await readOrders(db) });
   });
 
   const dist = fileURLToPath(new URL("../../dist", import.meta.url));

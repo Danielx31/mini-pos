@@ -39,6 +39,7 @@ function getPaymentMethodLabel(method) {
     card: "Credit/Debit Card",
     cash: "Cash",
     "e-wallet": "E-Wallet",
+    credit: "Utang / Pay later",
   };
   return labels[method] || method;
 }
@@ -110,8 +111,16 @@ function getPaymentMethodLabel(method) {
         <span>Method Recorded:</span>
         <span class="font-semibold">{{ getPaymentMethodLabel(order.payment.paymentMethod) }}</span>
       </div>
-      <p v-if="order.payment.paymentMethod !== 'cash'" class="text-xs text-slate-700">Status: Not verified by Mini POS. This POS did not charge or capture the payment.</p>
+      <p v-if="order.payment.paymentMethod === 'credit'" class="text-xs font-semibold text-amber-900">{{ order.refunded ? 'Refund recorded; remaining balance cancelled.' : order.credit?.balance > 0 ? 'UNPAID · Customer owes ' + formatCurrency(order.credit.balance) : 'PAID · Cash repayments recorded' }}</p>
+      <p v-else-if="order.payment.paymentMethod !== 'cash'" class="text-xs text-slate-700">Status: Not verified by Mini POS. This POS did not charge or capture the payment.</p>
       <p v-else class="text-xs text-slate-700">Status: Cash amount entered by staff.</p>
+
+      <div v-if="order.credit" class="space-y-1 rounded bg-amber-50 p-2 text-xs text-slate-800">
+        <p>Customer: {{ order.credit.customerName }}</p>
+        <p v-if="order.credit.customerContact">Contact: {{ order.credit.customerContact }}</p>
+        <p v-if="order.credit.dueDate">Due: {{ order.credit.dueDate }}</p>
+        <p>Outstanding: {{ formatCurrency(order.credit.balance) }}</p>
+      </div>
 
       <div v-if="order.payment.paymentMethod === 'cash'" class="space-y-1 bg-slate-50 p-2 rounded">
         <div class="flex justify-between text-xs text-slate-700">

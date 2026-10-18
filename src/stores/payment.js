@@ -5,11 +5,15 @@ export const PAYMENT_METHODS = {
   CASH: "cash",
   CARD: "card",
   EWALKET: "e-wallet",
+  CREDIT: "credit",
 };
 
 export const usePaymentStore = defineStore("payment", () => {
   const paymentMethod = ref(null);
   const cashTendered = ref(0);
+  const customerName = ref("");
+  const customerContact = ref("");
+  const dueDate = ref("");
   const isPaymentModalOpen = ref(false);
 
   function setPaymentMethod(method) {
@@ -41,6 +45,9 @@ export const usePaymentStore = defineStore("payment", () => {
     if (paymentMethod.value === PAYMENT_METHODS.CASH) {
       return cashTendered.value > 0 && cashTendered.value >= totalAmount;
     }
+    if (paymentMethod.value === PAYMENT_METHODS.CREDIT) {
+      return totalAmount > 0 && customerName.value.trim().length > 0 && customerName.value.trim().length <= 100 && customerContact.value.trim().length <= 100;
+    }
     return [PAYMENT_METHODS.CARD, PAYMENT_METHODS.EWALKET].includes(paymentMethod.value);
   }
 
@@ -51,6 +58,9 @@ export const usePaymentStore = defineStore("payment", () => {
   function openPaymentModal() {
     paymentMethod.value = null;
     cashTendered.value = 0;
+    customerName.value = "";
+    customerContact.value = "";
+    dueDate.value = "";
     isPaymentModalOpen.value = true;
   }
 
@@ -61,6 +71,9 @@ export const usePaymentStore = defineStore("payment", () => {
   function resetPayment() {
     paymentMethod.value = null;
     cashTendered.value = 0;
+    customerName.value = "";
+    customerContact.value = "";
+    dueDate.value = "";
     isPaymentModalOpen.value = false;
   }
 
@@ -79,6 +92,9 @@ export const usePaymentStore = defineStore("payment", () => {
   return {
     paymentMethod,
     cashTendered,
+    customerName,
+    customerContact,
+    dueDate,
     isPaymentModalOpen,
     setPaymentMethod,
     setCashTendered,

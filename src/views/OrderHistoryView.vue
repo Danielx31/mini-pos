@@ -21,9 +21,50 @@ const expandedOrderId = ref(null);
 const selectedOrderForReceipt = ref(null);
 const isReceiptModalOpen = ref(false);
 const isPdfGenerating = ref(false);
+const creditPayments = ref([]);
+const creditNotice = ref(null);
+const repaymentAmount = ref("");
+const repaymentNote = ref("");
+const repaymentKey = ref(crypto.randomUUID());
+const isRecordingRepayment = ref(false);
 
-function toggleOrderDetail(orderNumber) {
-  expandedOrderId.value = expandedOrderId.value === orderNumber ? null : orderNumber;
+async function toggleOrderDetail(order) {
+  expandedOrderId.value = expandedOrderId.value === order.orderNumber ? null : order.orderNumber;
+  creditPayments.value = [];
+  creditNotice.value = null;
+  repaymentAmount.value = "";
+  repaymentNote.value = "";
+  repaymentKey.value = crypto.randomUUID();
+  if (expandedOrderId.value && order.credit) {
+    try {
+      const payments = await ordersStore.loadCreditPayments(order.orderNumber);
+      if (expandedOrderId.value === order.orderNumber) creditPayments.value = payments;
+    } catch (error) {
+      if (expandedOrderId.value === order.orderNumber) creditNotice.value = { ok: false, message: error.message };
+    }
+  }
+}
+
+async function recordRepayment(order) {
+  if (isRecordingRepayment.value) return;
+  isRecordingRepayment.value = true;
+  try {
+    const result = await ordersStore.recordCreditPayment(order.orderNumber, {
+      paymentKey: repaymentKey.value,
+      amount: repaymentAmount.value,
+      method: "cash",
+      note: repaymentNote.value,
+    });
+    creditNotice.value = result;
+    if (result.ok) {
+      creditPayments.value = result.payments;
+      repaymentAmount.value = "";
+      repaymentNote.value = "";
+      repaymentKey.value = crypto.randomUUID();
+    }
+  } finally {
+    isRecordingRepayment.value = false;
+  }
 }
 
 function openReceiptModal(order) {
@@ -61,7 +102,8 @@ async function confirmClearHistory() {
 }
 
 async function confirmRefund(order) {
-  const confirmed = window.confirm(`Record a refund for order ${order.orderNumber} and restore inventory? Mini POS does not return card or e-wallet funds. Handle any external refund separately. This cannot be undone.`);
+  const creditMessage = order.credit ? " Any cash repayments already collected must be returned separately." : "";
+  const confirmed = window.confirm(`Record a refund for order ${order.orderNumber} and restore inventory? Mini POS does not return funds. Handle any external refund separately.${creditMessage} This cannot be undone.`);
   if (!confirmed) return;
   const result = await ordersStore.refundOrder(order.orderNumber);
   if (result.ok) {
@@ -77,14 +119,18 @@ async function confirmRefund(order) {
     <AppNavbar show-back />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm font-medium text-slate-500">Total Orders</p>
           <p class="mt-1 text-2xl font-bold text-slate-900">{{ ordersStore.totalOrders }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm font-medium text-slate-500">Recorded Sales Total</p>
+          <p class="text-sm font-medium text-slate-500">Recorded Sales (includes utang)</p>
           <p class="mt-1 text-2xl font-bold text-emerald-600">{{ formatCurrency(ordersStore.totalRevenue) }}</p>
+        </div>
+        <div class="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <p class="text-sm font-medium text-amber-800">Outstanding Utang</p>
+          <p class="mt-1 text-2xl font-bold text-amber-950">{{ formatCurrency(ordersStore.outstandingCredit) }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm font-medium text-slate-500">Items Sold</p>
@@ -103,7 +149,7 @@ async function confirmRefund(order) {
               <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
               </svg>
-              <input v-model="ordersStore.searchTerm" type="text" placeholder="Search orders or items..." class="w-full rounded-2xl border border-slate-300 bg-white px-10 py-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+              <input v-model="ordersStore.searchTerm" type="text" placeholder="Search order, item, or customer..." class="w-full rounded-2xl border border-slate-300 bg-white px-10 py-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
             </div>
             <input v-model="ordersStore.dateFilter" type="date" class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
             <button v-if="ordersStore.searchTerm || ordersStore.dateFilter" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition" @click="ordersStore.clearFilters()">Clear</button>
@@ -113,7 +159,7 @@ async function confirmRefund(order) {
 
       <div class="space-y-4">
         <div v-for="order in ordersStore.filteredOrders" :key="order.orderNumber" class="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
-          <button class="w-full flex flex-col gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors sm:flex-row sm:items-center sm:justify-between" @click="toggleOrderDetail(order.orderNumber)">
+          <button class="w-full flex flex-col gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors sm:flex-row sm:items-center sm:justify-between" @click="toggleOrderDetail(order)">
             <div class="flex items-center gap-4 min-w-0">
               <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,7 +169,8 @@ async function confirmRefund(order) {
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <p class="truncate text-sm font-semibold text-slate-800">{{ order.orderNumber }}</p>
-                  <span v-if="order.payment && order.payment.paymentMethod !== 'cash'" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Payment unverified</span>
+                  <span v-if="order.credit && !order.refunded" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">{{ order.credit.balance > 0 ? `Utang · ${formatCurrency(order.credit.balance)} due` : 'Utang paid' }}</span>
+                  <span v-else-if="order.payment && order.payment.paymentMethod !== 'cash' && !order.refunded" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Payment unverified</span>
                   <span v-if="order.refunded" class="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-rose-100 text-rose-700">
                     Refund recorded
                   </span>
@@ -177,6 +224,7 @@ async function confirmRefund(order) {
                     'bg-blue-100 text-blue-700': order.payment.paymentMethod === 'card',
                     'bg-green-100 text-green-700': order.payment.paymentMethod === 'cash',
                     'bg-purple-100 text-purple-700': order.payment.paymentMethod === 'e-wallet',
+                    'bg-amber-100 text-amber-800': order.payment.paymentMethod === 'credit',
                   }"
                 >
                   {{
@@ -184,12 +232,13 @@ async function confirmRefund(order) {
                       ? 'Credit/Debit Card'
                       : order.payment.paymentMethod === 'cash'
                         ? 'Cash'
-                        : 'E-Wallet'
+                        : order.payment.paymentMethod === 'credit' ? 'Utang / Pay later' : 'E-Wallet'
                   }}
                 </span>
               </div>
 
-              <p v-if="order.payment.paymentMethod !== 'cash'" class="mt-2 text-xs text-amber-800">Payment status: Not verified by Mini POS. No card or wallet charge was made by this app.</p>
+              <p v-if="order.payment.paymentMethod === 'credit'" class="mt-2 text-xs text-amber-800">{{ order.refunded ? 'Sale refunded; remaining debt cancelled.' : order.credit?.balance > 0 ? 'Payment status: Utang balance outstanding.' : 'Payment status: Fully repaid in recorded cash.' }}</p>
+              <p v-else-if="order.payment.paymentMethod !== 'cash'" class="mt-2 text-xs text-amber-800">Payment status: Not verified by Mini POS. No card or wallet charge was made by this app.</p>
               <p v-else class="mt-2 text-xs text-slate-600">Payment status: Cash amount entered by staff.</p>
 
               <!-- Cash Payment Details -->
@@ -211,6 +260,42 @@ async function confirmRefund(order) {
                 </div>
               </div>
             </div>
+
+            <section v-if="order.credit" class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 class="font-semibold text-amber-950">Utang for {{ order.credit.customerName }}</h3>
+                  <p v-if="order.credit.customerContact" class="text-sm text-amber-900">Contact: {{ order.credit.customerContact }}</p>
+                  <p v-if="order.credit.dueDate" class="text-sm text-amber-900">Due: {{ order.credit.dueDate }}</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-amber-800">Outstanding balance</p>
+                  <p class="text-xl font-bold text-amber-950">{{ formatCurrency(order.credit.balance) }}</p>
+                </div>
+              </div>
+              <p v-if="order.refunded" class="mt-3 text-sm text-rose-800">Sale refunded. Any collected repayments must be returned outside Mini POS.</p>
+              <form v-else-if="order.credit.balance > 0" class="mt-4 grid gap-3 border-t border-amber-200 pt-4 sm:grid-cols-[1fr_1fr_auto]" @submit.prevent="recordRepayment(order)">
+                <div>
+                  <label for="repayment-amount" class="block text-xs font-semibold text-amber-950">Cash received</label>
+                  <input id="repayment-amount" v-model="repaymentAmount" type="number" min="0.01" step="0.01" :max="order.credit.balance" required class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="Amount" />
+                </div>
+                <div>
+                  <label for="repayment-note" class="block text-xs font-semibold text-amber-950">Note (optional)</label>
+                  <input id="repayment-note" v-model="repaymentNote" type="text" maxlength="200" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="Reference or note" />
+                </div>
+                <button type="submit" :disabled="isRecordingRepayment" class="self-end rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50">{{ isRecordingRepayment ? 'Recording...' : 'Record cash' }}</button>
+              </form>
+              <p v-if="creditNotice" role="status" aria-live="polite" class="mt-3 rounded-xl border p-3 text-sm" :class="creditNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-800'">{{ creditNotice.message }}</p>
+              <div v-if="creditPayments.length" class="mt-4 border-t border-amber-200 pt-3">
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-amber-900">Cash repayments</h4>
+                <ul class="mt-2 space-y-2">
+                  <li v-for="payment in creditPayments" :key="payment.id" class="flex flex-wrap justify-between gap-2 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                    <span>{{ formatDateTime(payment.receivedAt) }} · {{ payment.receivedBy }}<span v-if="payment.note"> · {{ payment.note }}</span></span>
+                    <strong>{{ formatCurrency(payment.amount) }}</strong>
+                  </li>
+                </ul>
+              </div>
+            </section>
 
             <!-- Receipt Actions -->
             <div class="mt-4 border-t border-slate-200 pt-4 flex gap-2 justify-end">

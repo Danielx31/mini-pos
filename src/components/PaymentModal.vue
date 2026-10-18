@@ -66,9 +66,9 @@ function cancelPayment() {
     <div class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
       <!-- Header -->
       <div class="mb-6">
-        <h2 class="text-2xl font-bold text-slate-900">Record Sale Method</h2>
+        <h2 class="text-2xl font-bold text-slate-900">Record Sale</h2>
         <p class="mt-1 text-sm text-slate-500">
-          Choose how the customer paid. Mini POS records this information; it does not process electronic payments.
+          Choose a recorded payment method or mark this sale as utang. Mini POS does not process electronic payments.
         </p>
       </div>
 
@@ -186,9 +186,33 @@ function cancelPayment() {
             />
           </svg>
         </label>
+
+        <label class="flex cursor-pointer items-center gap-4 rounded-2xl border-2 px-4 py-3 transition" :class="paymentStore.paymentMethod === PAYMENT_METHODS.CREDIT ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300'">
+          <input type="radio" name="payment-method" :value="PAYMENT_METHODS.CREDIT" :checked="paymentStore.paymentMethod === PAYMENT_METHODS.CREDIT" @change="() => handlePaymentMethodChange(PAYMENT_METHODS.CREDIT)" class="h-5 w-5 cursor-pointer text-amber-600" />
+          <div class="flex-1">
+            <p class="font-semibold text-slate-900">Utang · Pay later</p>
+            <p class="text-xs text-slate-500">Record the full amount as unpaid customer credit</p>
+          </div>
+        </label>
       </div>
 
-      <p v-if="paymentStore.paymentMethod && !isCash" class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <div v-if="paymentStore.paymentMethod === PAYMENT_METHODS.CREDIT" class="mb-5 space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <p class="text-sm font-medium text-amber-950">This sale will be unpaid until you record repayments in Orders.</p>
+        <div>
+          <label for="credit-customer-name" class="block text-sm font-semibold text-slate-700">Customer name *</label>
+          <input id="credit-customer-name" v-model="paymentStore.customerName" type="text" maxlength="100" autocomplete="name" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="Customer name" />
+        </div>
+        <div>
+          <label for="credit-customer-contact" class="block text-sm font-semibold text-slate-700">Contact (optional)</label>
+          <input id="credit-customer-contact" v-model="paymentStore.customerContact" type="text" maxlength="100" autocomplete="tel" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="Phone or contact detail" />
+        </div>
+        <div>
+          <label for="credit-due-date" class="block text-sm font-semibold text-slate-700">Due date (optional)</label>
+          <input id="credit-due-date" v-model="paymentStore.dueDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+        </div>
+      </div>
+
+      <p v-if="paymentStore.paymentMethod && !isCash && paymentStore.paymentMethod !== PAYMENT_METHODS.CREDIT" class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         Confirm the payment outside Mini POS before recording the sale. Mini POS cannot charge or verify this {{ paymentStore.paymentMethod === PAYMENT_METHODS.CARD ? 'card' : 'e-wallet' }} payment.
       </p>
 
@@ -268,7 +292,7 @@ function cancelPayment() {
           :disabled="!isValidPayment || isSubmitting"
           class="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {{ isSubmitting ? 'Recording sale...' : 'Record sale and method' }}
+          {{ isSubmitting ? 'Recording sale...' : paymentStore.paymentMethod === PAYMENT_METHODS.CREDIT ? 'Record utang sale' : 'Record sale and method' }}
         </button>
       </div>
     </div>

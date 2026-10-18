@@ -73,7 +73,7 @@ function switchRevenueChartType(type) {
           <p class="text-3xl font-bold text-white">
             {{ formatCurrency(analytics.totalRevenue) }}
           </p>
-          <p class="text-sm text-slate-400 mt-2">Total from {{ analytics.totalOrders }} recorded orders</p>
+          <p class="text-sm text-slate-400 mt-2">Total from {{ analytics.totalOrders }} recorded orders, including unpaid utang. See Orders for outstanding balances.</p>
         </div>
 
         <!-- Today's recorded sales -->
