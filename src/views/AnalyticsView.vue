@@ -44,7 +44,7 @@ function switchRevenueChartType(type) {
       <div class="mb-8">
         <h1 class="text-4xl font-bold text-white mb-2">Sales Analytics</h1>
         <p class="text-slate-400">
-          Sales totals include card and e-wallet methods that Mini POS has not verified with a payment provider.
+          Refunded orders are excluded from these sales totals. Card and e-wallet methods have not been verified with a payment provider.
         </p>
       </div>
 
@@ -280,7 +280,7 @@ function switchRevenueChartType(type) {
       </div>
 
       <!-- Empty State -->
-      <div v-if="ordersStore.totalOrders === 0" class="text-center py-16">
+      <div v-if="analytics.totalOrders === 0" class="text-center py-16">
         <svg
           class="mx-auto h-12 w-12 text-slate-400 mb-4"
           fill="none"

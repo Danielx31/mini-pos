@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { api } from "../lib/api";
+import { useAuthStore } from "./auth";
 import { useProductsStore } from "./products";
 
 export const useOrdersStore = defineStore("orders", () => {
@@ -27,6 +28,7 @@ export const useOrdersStore = defineStore("orders", () => {
   }
   function clearFilters() { searchTerm.value = ""; dateFilter.value = ""; }
   async function refundOrder(orderNumber) {
+    if (!useAuthStore().canManage) return { ok: false, message: "Manager or administrator access required to record refunds." };
     try {
       const result = await api(`/orders/${encodeURIComponent(orderNumber)}/refund`, { method: "POST" });
       orders.value = result.orders;

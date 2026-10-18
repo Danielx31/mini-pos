@@ -51,6 +51,17 @@ async function readProducts(db) {
   return (await db.prepare("SELECT * FROM products WHERE active=1 ORDER BY name").all()).map(productDto);
 }
 
+async function readStockDisposals(db) {
+  const rows = await db.prepare(`SELECT disposals.*,users.display_name AS disposed_by_name
+    FROM stock_disposals AS disposals JOIN users ON users.id=disposals.disposed_by
+    ORDER BY disposals.disposed_at DESC LIMIT 100`).all();
+  return rows.map((row) => ({
+    id: row.id, productId: row.product_id, productName: row.product_name,
+    quantity: row.quantity, reason: row.reason, expiryDate: row.expiry_date,
+    note: row.note, disposedAt: row.disposed_at, disposedBy: row.disposed_by_name,
+  }));
+}
+
 async function ensureProductIsNotParked(db, productId) {
   const parked = (await db.prepare("SELECT payload_json FROM holds").all())
     .some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === productId));
@@ -346,6 +357,43 @@ export function createApp(db, options = {}) {
       const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=? AND active=1").run(input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold, req.params.id);
       if (!result.changes) throw new ApiError(404, "Product not found.");
       res.json({ ok: true, message: `\"${input.name}\" updated successfully.`, products: await readProducts(db) });
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/stock-disposals", auth, manager, async (_req, res, next) => {
+    try { res.json(await readStockDisposals(db)); }
+    catch (error) { next(error); }
+  });
+  app.post("/api/v1/products/:id/disposals", auth, manager, async (req, res, next) => {
+    try {
+      requireValid(typeof req.body?.disposalKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.disposalKey), "Invalid disposal request ID.");
+      const quantity = wholeNumber(req.body?.quantity, "Disposal quantity");
+      requireValid(quantity > 0, "Dispose at least one unit.");
+      const expiryDate = optionalText(req.body?.expiryDate, 10) || null;
+      if (expiryDate) requireValid(/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) && !Number.isNaN(Date.parse(`${expiryDate}T00:00:00Z`)) && new Date(`${expiryDate}T00:00:00Z`).toISOString().slice(0, 10) === expiryDate, "Expiry date must be a valid date.");
+      const note = optionalText(req.body?.note, 200) || null;
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT * FROM stock_disposals WHERE disposal_key=?").get(req.body.disposalKey);
+        if (previous) {
+          if (previous.product_id !== req.params.id || previous.quantity !== quantity || previous.expiry_date !== expiryDate || previous.note !== note) {
+            throw new ApiError(409, "Disposal request ID was already used for a different disposal.");
+          }
+          return { duplicate: true, productName: previous.product_name };
+        }
+        const product = await db.prepare("SELECT id,name FROM products WHERE id=? AND active=1").get(req.params.id);
+        if (!product) throw new ApiError(404, "Product not found in the active catalog.");
+        const updated = await db.prepare("UPDATE products SET stock=stock-CAST(? AS INTEGER) WHERE id=? AND active=1 AND stock>=CAST(? AS INTEGER)")
+          .run(quantity, product.id, quantity);
+        if (!updated.changes) throw new ApiError(409, "Disposal quantity exceeds available stock.");
+        await db.prepare(`INSERT INTO stock_disposals
+          (id,disposal_key,product_id,product_name,quantity,reason,expiry_date,note,disposed_by,disposed_at)
+          VALUES (?,?,?,?,?,'expired',?,?,?,?)`)
+          .run(randomUUID(), req.body.disposalKey, product.id, product.name, quantity, expiryDate, note, req.session.user_id, new Date().toISOString());
+        return { duplicate: false, productName: product.name };
+      });
+      res.status(result.duplicate ? 200 : 201).json({
+        ok: true, message: result.duplicate ? "Disposal was already recorded." : `${quantity} expired ${quantity === 1 ? "unit" : "units"} of "${result.productName}" disposed.`,
+        products: await readProducts(db), disposals: await readStockDisposals(db),
+      });
     } catch (error) { next(error); }
   });
   app.get("/api/v1/product-delete-requests", auth, manager, async (req, res, next) => {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useProductsStore } from "../stores/products";
 import { useAuthStore } from "../stores/auth";
 import { useTaxStore } from "../stores/taxes";
@@ -15,6 +15,14 @@ const searchTerm = ref("");
 const notice = ref(null);
 const deleteNotice = ref(null);
 const taxNotice = ref(null);
+const disposalNotice = ref(null);
+const disposalProduct = ref(null);
+const disposalQuantity = ref("");
+const disposalExpiryDate = ref("");
+const disposalNote = ref("");
+const disposalKey = ref(crypto.randomUUID());
+const isDisposing = ref(false);
+const disposalQuantityInput = ref(null);
 const taxRateInputs = ref({});
 
 const showAddForm = ref(false);
@@ -42,8 +50,9 @@ const filteredProducts = computed(() => {
 const pendingRemovalIds = computed(() => new Set(productsStore.deletionRequests.map((request) => request.productId)));
 
 onMounted(async () => {
-  const result = await productsStore.loadDeletionRequests();
-  if (!result.ok) notice.value = result;
+  const [requests, disposals] = await Promise.all([productsStore.loadDeletionRequests(), productsStore.loadStockDisposals()]);
+  if (!requests.ok) notice.value = requests;
+  else if (!disposals.ok) notice.value = disposals;
 });
 
 watch(
@@ -108,6 +117,41 @@ async function submitEdit() {
   });
   notice.value = result;
   if (result.ok) resetForm();
+}
+
+function closeDisposal() {
+  disposalProduct.value = null;
+  disposalQuantity.value = "";
+  disposalExpiryDate.value = "";
+  disposalNote.value = "";
+}
+
+async function openDisposal(product) {
+  closeDisposal();
+  disposalProduct.value = product;
+  disposalNotice.value = null;
+  await nextTick();
+  disposalQuantityInput.value?.focus();
+}
+
+async function submitDisposal() {
+  if (!disposalProduct.value || isDisposing.value) return;
+  isDisposing.value = true;
+  try {
+    const result = await productsStore.disposeExpiredStock(disposalProduct.value.id, {
+      disposalKey: disposalKey.value,
+      quantity: disposalQuantity.value,
+      expiryDate: disposalExpiryDate.value,
+      note: disposalNote.value,
+    });
+    disposalNotice.value = result;
+    if (result.ok) {
+      closeDisposal();
+      disposalKey.value = crypto.randomUUID();
+    }
+  } finally {
+    isDisposing.value = false;
+  }
 }
 
 async function confirmDelete(product) {
@@ -307,6 +351,34 @@ async function resetTaxRates() {
         <button type="button" class="font-semibold hover:underline" @click="deleteNotice = null">Dismiss</button>
       </div>
 
+      <div v-if="disposalNotice" role="status" aria-live="polite" class="mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm" :class="disposalNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-700'">
+        <span>{{ disposalNotice.message }}</span>
+        <button type="button" class="font-semibold hover:underline" @click="disposalNotice = null">Dismiss</button>
+      </div>
+
+      <section v-if="disposalProduct" aria-labelledby="disposal-heading" class="mb-6 rounded-[1.75rem] border border-amber-300 bg-amber-50 p-5 shadow-sm">
+        <h2 id="disposal-heading" class="text-lg font-semibold text-amber-950">Dispose expired stock: {{ disposalProduct.name }}</h2>
+        <p class="mt-1 text-sm text-amber-900">{{ disposalProduct.stock }} units currently available. Disposal reduces stock without creating a sale. If none remain, this product disappears from the customer menu.</p>
+        <form class="mt-4 grid gap-4 sm:grid-cols-2" @submit.prevent="submitDisposal">
+          <div>
+            <label for="disposal-quantity" class="mb-1 block text-sm font-medium text-slate-800">Units to dispose *</label>
+            <input id="disposal-quantity" ref="disposalQuantityInput" v-model="disposalQuantity" type="number" min="1" :max="disposalProduct.stock" step="1" required class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-950 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+          </div>
+          <div>
+            <label for="disposal-expiry" class="mb-1 block text-sm font-medium text-slate-800">Expiry date on package (optional)</label>
+            <input id="disposal-expiry" v-model="disposalExpiryDate" type="date" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-950 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+          </div>
+          <div class="sm:col-span-2">
+            <label for="disposal-note" class="mb-1 block text-sm font-medium text-slate-800">Note (optional)</label>
+            <input id="disposal-note" v-model="disposalNote" type="text" maxlength="200" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-950 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="For example: found during shelf check" />
+          </div>
+          <div class="flex flex-wrap gap-2 sm:col-span-2">
+            <button type="submit" :disabled="isDisposing" class="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50">{{ isDisposing ? 'Recording...' : 'Record disposal' }}</button>
+            <button type="button" :disabled="isDisposing" class="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50" @click="closeDisposal">Cancel</button>
+          </div>
+        </form>
+      </section>
+
       <section v-if="productsStore.deletionRequests.length > 0" class="mb-6 rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 shadow-sm">
         <h2 class="text-lg font-semibold text-amber-950">{{ authStore.isAdmin ? 'Removal requests awaiting approval' : 'Your removal requests' }}</h2>
         <div class="mt-4 space-y-3">
@@ -364,6 +436,7 @@ async function resetTaxRates() {
               <td class="px-5 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors" @click="openEditForm(product)">Edit</button>
+                  <button v-if="product.stock > 0" type="button" class="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 transition-colors" @click="openDisposal(product)">Dispose expired</button>
                   <button class="rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50" :disabled="!authStore.isAdmin && pendingRemovalIds.has(product.id)" @click="confirmDelete(product)">{{ authStore.isAdmin ? 'Remove' : pendingRemovalIds.has(product.id) ? 'Pending approval' : 'Request removal' }}</button>
                 </div>
               </td>
@@ -374,6 +447,28 @@ async function resetTaxRates() {
 
         <div v-if="filteredProducts.length === 0" class="py-8 text-center text-sm text-slate-500">{{ productsStore.totalProducts === 0 ? 'Your catalog is empty. Add your first product above.' : 'No products found. Try clearing the search.' }}</div>
       </div>
+
+      <details class="mt-6 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+        <summary class="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">Expired stock disposal history (latest 100)</summary>
+        <div v-if="productsStore.disposals.length" class="overflow-x-auto border-t border-slate-200">
+          <table class="w-full min-w-[650px] text-left text-sm">
+            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+              <tr><th scope="col" class="px-5 py-3">When</th><th scope="col" class="px-5 py-3">Product</th><th scope="col" class="px-5 py-3 text-right">Units</th><th scope="col" class="px-5 py-3">Expiry date</th><th scope="col" class="px-5 py-3">Recorded by</th><th scope="col" class="px-5 py-3">Note</th></tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+              <tr v-for="disposal in productsStore.disposals" :key="disposal.id">
+                <td class="px-5 py-3 text-slate-700">{{ new Date(disposal.disposedAt).toLocaleString() }}</td>
+                <td class="px-5 py-3 font-medium text-slate-900">{{ disposal.productName }}</td>
+                <td class="px-5 py-3 text-right font-semibold text-amber-900">{{ disposal.quantity }}</td>
+                <td class="px-5 py-3 text-slate-700">{{ disposal.expiryDate || '—' }}</td>
+                <td class="px-5 py-3 text-slate-700">{{ disposal.disposedBy }}</td>
+                <td class="px-5 py-3 text-slate-700">{{ disposal.note || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="border-t border-slate-200 px-5 py-6 text-sm text-slate-600">No expired stock has been disposed yet.</p>
+      </details>
     </main>
   </div>
 </template>

@@ -105,6 +105,13 @@ export async function initializeDatabase(db) {
         pending_product_id TEXT UNIQUE,
         reviewed_by TEXT REFERENCES users(id), reviewed_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS stock_disposals (
+        id TEXT PRIMARY KEY, disposal_key TEXT NOT NULL UNIQUE,
+        product_id TEXT NOT NULL REFERENCES products(id), product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0), reason TEXT NOT NULL CHECK(reason = 'expired'),
+        expiry_date TEXT, note TEXT, disposed_by TEXT NOT NULL REFERENCES users(id), disposed_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_stock_disposals_date ON stock_disposals(disposed_at);
       CREATE TABLE IF NOT EXISTS coupons (
         id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE,
         description TEXT NOT NULL, type TEXT NOT NULL, value INTEGER NOT NULL,

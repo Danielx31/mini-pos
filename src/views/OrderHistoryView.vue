@@ -102,6 +102,7 @@ async function confirmClearHistory() {
 }
 
 async function confirmRefund(order) {
+  if (!authStore.canManage || order.refunded) return;
   const creditMessage = order.credit ? " Any cash repayments already collected must be returned separately." : "";
   const confirmed = window.confirm(`Record a refund for order ${order.orderNumber} and restore inventory? Mini POS does not return funds. Handle any external refund separately.${creditMessage} This cannot be undone.`);
   if (!confirmed) return;
