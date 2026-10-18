@@ -90,10 +90,21 @@ export async function initializeDatabase(db) {
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY, sku TEXT UNIQUE, name TEXT NOT NULL UNIQUE,
         category TEXT NOT NULL, price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
-        stock INTEGER NOT NULL CHECK(stock >= 0), low_stock_threshold INTEGER NOT NULL CHECK(low_stock_threshold >= 0)
+        stock INTEGER NOT NULL CHECK(stock >= 0), low_stock_threshold INTEGER NOT NULL CHECK(low_stock_threshold >= 0),
+        active INTEGER NOT NULL DEFAULT 1, archived_name TEXT, archived_sku TEXT
       );
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_name TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_sku TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_lower ON products (LOWER(sku));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_lower ON products (LOWER(name));
+      CREATE TABLE IF NOT EXISTS product_delete_requests (
+        id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), product_name TEXT NOT NULL,
+        requested_by TEXT NOT NULL REFERENCES users(id), requested_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
+        pending_product_id TEXT UNIQUE,
+        reviewed_by TEXT REFERENCES users(id), reviewed_at TEXT
+      );
       CREATE TABLE IF NOT EXISTS coupons (
         id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE,
         description TEXT NOT NULL, type TEXT NOT NULL, value INTEGER NOT NULL,

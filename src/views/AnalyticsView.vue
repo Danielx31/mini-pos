@@ -44,18 +44,18 @@ function switchRevenueChartType(type) {
       <div class="mb-8">
         <h1 class="text-4xl font-bold text-white mb-2">Sales Analytics</h1>
         <p class="text-slate-400">
-          Comprehensive insights into your daily, weekly, and monthly sales performance
+          Sales totals include card and e-wallet methods that Mini POS has not verified with a payment provider.
         </p>
       </div>
 
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <!-- Total Revenue -->
+        <!-- Recorded sales total -->
         <div
           class="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-xl p-6 backdrop-blur"
         >
           <div class="flex items-center justify-between mb-4">
-            <h3 class="text-slate-300 font-medium">Total Revenue</h3>
+            <h3 class="text-slate-300 font-medium">Recorded Sales Total</h3>
             <svg
               class="w-6 h-6 text-blue-400"
               fill="none"
@@ -73,15 +73,15 @@ function switchRevenueChartType(type) {
           <p class="text-3xl font-bold text-white">
             {{ formatCurrency(analytics.totalRevenue) }}
           </p>
-          <p class="text-sm text-slate-400 mt-2">All time revenue from {{ analytics.totalOrders }} orders</p>
+          <p class="text-sm text-slate-400 mt-2">Total from {{ analytics.totalOrders }} recorded orders</p>
         </div>
 
-        <!-- Today's Revenue -->
+        <!-- Today's recorded sales -->
         <div
           class="bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-xl p-6 backdrop-blur"
         >
           <div class="flex items-center justify-between mb-4">
-            <h3 class="text-slate-300 font-medium">Today's Revenue</h3>
+            <h3 class="text-slate-300 font-medium">Today's Recorded Sales</h3>
             <svg
               class="w-6 h-6 text-green-400"
               fill="none"
@@ -160,10 +160,10 @@ function switchRevenueChartType(type) {
         </div>
       </div>
 
-      <!-- Revenue Chart with Toggle -->
+      <!-- Recorded sales chart with toggle -->
       <div class="mb-8">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-2xl font-bold text-white">Revenue Trends</h2>
+          <h2 class="text-2xl font-bold text-white">Recorded Sales Trends</h2>
           <div class="flex gap-2">
             <button
               @click="switchRevenueChartType('daily')"
@@ -204,15 +204,15 @@ function switchRevenueChartType(type) {
         <ChartComponent
           :data="revenueData"
           type="line"
-          title="Revenue Over Time"
-          y-axis-label="Revenue (₱)"
+          title="Recorded Sales Over Time"
+          y-axis-label="Recorded sales (₱)"
           label-key="date"
           data-key="revenue"
           :height="400"
         />
 
         <div v-if="revenueData.length === 0" class="text-center text-slate-400 mt-4">
-          No revenue data available
+          No recorded sales data available
         </div>
       </div>
 
@@ -241,8 +241,8 @@ function switchRevenueChartType(type) {
           <ChartComponent
             :data="peakHours"
             type="bar"
-            title="Revenue by Hour of Day"
-            y-axis-label="Revenue (₱)"
+            title="Recorded Sales by Hour of Day"
+            y-axis-label="Recorded sales (₱)"
             label-key="hour"
             data-key="revenue"
             :height="350"
@@ -250,7 +250,7 @@ function switchRevenueChartType(type) {
         </div>
       </div>
 
-      <!-- Top Products Revenue Table -->
+      <!-- Top products by recorded sales -->
       <div v-if="topSellingProducts.length > 0" class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 backdrop-blur">
         <h2 class="text-2xl font-bold text-white mb-4">Product Performance</h2>
         <div class="overflow-x-auto">
@@ -259,7 +259,7 @@ function switchRevenueChartType(type) {
               <tr class="border-b border-slate-700">
                 <th class="text-left py-3 px-4 text-slate-300 font-semibold">Product</th>
                 <th class="text-right py-3 px-4 text-slate-300 font-semibold">Units Sold</th>
-                <th class="text-right py-3 px-4 text-slate-300 font-semibold">Revenue</th>
+                <th class="text-right py-3 px-4 text-slate-300 font-semibold">Recorded Sales</th>
               </tr>
             </thead>
             <tbody>

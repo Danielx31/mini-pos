@@ -63,12 +63,12 @@ function cancelPayment() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-    <div class="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
+    <div class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
       <!-- Header -->
       <div class="mb-6">
-        <h2 class="text-2xl font-bold text-slate-900">Select Payment Method</h2>
+        <h2 class="text-2xl font-bold text-slate-900">Record Sale Method</h2>
         <p class="mt-1 text-sm text-slate-500">
-          Record the payment method used for this sale
+          Choose how the customer paid. Mini POS records this information; it does not process electronic payments.
         </p>
       </div>
 
@@ -100,7 +100,7 @@ function cancelPayment() {
           />
           <div class="flex-1">
             <p class="font-semibold text-slate-900">Credit/Debit Card</p>
-            <p class="text-xs text-slate-500">Record a card payment completed externally</p>
+            <p class="text-xs text-slate-500">Record the method after checking your card terminal</p>
           </div>
           <svg
             class="h-5 w-5 text-blue-600"
@@ -170,7 +170,7 @@ function cancelPayment() {
           />
           <div class="flex-1">
             <p class="font-semibold text-slate-900">E-Wallet</p>
-            <p class="text-xs text-slate-500">Record a wallet payment completed externally</p>
+            <p class="text-xs text-slate-500">Record the method after checking your wallet app</p>
           </div>
           <svg
             class="h-5 w-5 text-purple-600"
@@ -187,6 +187,10 @@ function cancelPayment() {
           </svg>
         </label>
       </div>
+
+      <p v-if="paymentStore.paymentMethod && !isCash" class="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Confirm the payment outside Mini POS before recording the sale. Mini POS cannot charge or verify this {{ paymentStore.paymentMethod === PAYMENT_METHODS.CARD ? 'card' : 'e-wallet' }} payment.
+      </p>
 
       <!-- Cash Input (visible when Cash is selected) -->
       <transition
@@ -264,7 +268,7 @@ function cancelPayment() {
           :disabled="!isValidPayment || isSubmitting"
           class="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {{ isSubmitting ? 'Recording sale...' : 'Record Sale' }}
+          {{ isSubmitting ? 'Recording sale...' : 'Record sale and method' }}
         </button>
       </div>
     </div>

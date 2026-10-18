@@ -243,7 +243,7 @@ export const usePosStore = defineStore("pos", () => {
         Object.assign(item, { name: product.name, category: product.category, price: product.price });
       }
       if (priceChanged) return { ok: false, message: "Product prices or taxes changed. Review the updated cart, then check out again." };
-      return { ok: true, message: "Ready to proceed with payment." };
+      return { ok: true, message: "Ready to record the sale and payment method." };
     } catch (error) {
       return { ok: false, message: error.message };
     } finally {

@@ -11,6 +11,7 @@
     "dev": "node --watch --env-file-if-exists=../.env.local src/app.js",
     "create-user": "node --env-file-if-exists=../.env.local src/create-user.js",
     "manage-user": "node --env-file-if-exists=../.env.local src/manage-user.js",
+    "migrate": "node --env-file-if-exists=../.env.local src/migrate.js",
     "import-sqlite": "node --env-file-if-exists=../.env.local src/import-sqlite.js",
     "test": "node --test"
   },

@@ -39,8 +39,8 @@ After signing in as an administrator, open **Accounts** in the POS navigation to
 | Role | Access |
 | --- | --- |
 | Cashier | Sales, order history, and parked orders |
-| Manager | Cashier access plus products, taxes, analytics, refunds, and order archives |
-| Admin | Manager access plus account creation |
+| Manager | Cashier access plus product editing, removal requests, taxes, analytics, refunds, and order archives |
+| Admin | Manager access plus account creation, product removal approval, and direct catalog removal |
 
 Start the API and Vue development server in separate terminals. The development API command restarts automatically when you edit files in `server/src`:
 
@@ -51,7 +51,7 @@ npm run dev
 
 Open the Vite URL (normally `http://localhost:5173`) or `/menu` to see the public customer menu. Staff sign in at `/admin-pos`; after sign-in, that same URL shows the POS. Vite proxies `/api` to the Node server on port 3000. No default passwords or demo accounts are installed. PostgreSQL stores the application data; `DATABASE_URL` must be available to the Node process.
 
-The API owns users, sessions, products, stock, orders, refunds, coupons, tax rates, and parked orders. Cashiers may sell and hold orders. Managers may also manage products and taxes, view analytics, refund sales, and archive or view archived orders. Administrators have all manager permissions and are the only role allowed to create accounts through the application. Archived orders remain in PostgreSQL and are available to managers and administrators from `GET /api/v1/orders/archive`. Products referenced by recorded sales or parked orders cannot be deleted. Managers and admins can use **Products → Clear Catalog** to remove all products when no sales or parked orders exist. The server recalculates sale totals and changes stock and orders in one PostgreSQL transaction. Card and e-wallet selections record an externally completed payment; this project does not charge a card or wallet.
+The API owns users, sessions, products, stock, orders, refunds, coupons, tax rates, and parked orders. Cashiers may sell and hold orders. Managers may edit products and request their removal. Only admins can approve or reject those requests, remove a product immediately, or use **Products → Clear Catalog**. Removal archives a product in PostgreSQL, hides it from the POS and customer menu, and releases its name and SKU for reuse. The archived row keeps its original name and SKU in `archived_name` and `archived_sku`; recorded sales and refunds keep their product references. Parked orders must be cleared before the referenced product can be removed. Admins alone can create accounts in the application. Archived orders remain in PostgreSQL and are available to managers and admins from `GET /api/v1/orders/archive`. The server recalculates sale totals and changes stock and orders in one PostgreSQL transaction. Card and e-wallet choices record only the selected method with `verificationStatus: "not_verified"`; staff must confirm those payments outside Mini POS. This project does not charge a card or wallet or return funds for a recorded refund. Sales totals include unverified electronic methods and are labeled as recorded sales.
 
 ### Move existing SQLite data
 
@@ -61,11 +61,13 @@ Keep a backup of `server/data/pos.sqlite` and stop the old API before the final 
 npm --prefix server run import-sqlite
 ```
 
-The importer copies users, password hashes, products, coupons, tax rates, orders, and parked orders in one transaction. It does not import sessions; users sign in again. It refuses a PostgreSQL database with existing users or sales, or a catalog that is not fresh. Imported SQLite products appear in the new catalog. If they are only sample products and no sales or parked orders exist, use **Products → Clear Catalog** after import to start empty. Keep the SQLite backup until you have checked accounts, stock, and order history in the new database. Do not create a new admin first when importing existing users.
+The importer copies users, password hashes, products, coupons, tax rates, orders, and parked orders in one transaction. It does not import sessions; users sign in again. It refuses a PostgreSQL database with existing users or sales, or a catalog that is not fresh. Imported SQLite products appear in the new catalog. If they are only sample products, an admin can use **Products → Clear Catalog** after resolving any parked orders to start empty. Keep the SQLite backup until you have checked accounts, stock, and order history in the new database. Do not create a new admin first when importing existing users.
 
 ### Deploy on Vercel
 
 Connect a PostgreSQL provider through the Vercel Marketplace or another hosted PostgreSQL service. Set `DATABASE_URL` in the Vercel project environment. For Production, set `POS_PUBLIC_ORIGIN` to the exact HTTPS site origin; Preview deployments can omit it and use their request origin. Initialize the database from a trusted terminal using `create-user` or `import-sqlite` **before** deploying, with the same `DATABASE_URL`. Vercel builds the Vue frontend and routes `/api/v1/*` to a Node Function using `vercel.json`. Use a separate PostgreSQL database for Preview deployments so test sales do not enter production. The function does not run schema initialization on requests.
+
+Before deploying these catalog changes to an existing Vercel database, run `npm --prefix server run migrate` from a trusted terminal with `.env.local` pointing to that database. The command uses the direct PostgreSQL URL and adds the archive and approval schema without removing existing products or sales. Test it against a Neon development branch first, then run it against production and redeploy Vercel. The Vercel Function does not run schema initialization on requests.
 
 For an IIS deployment, run `npm run build` and `npm run server` with `NODE_ENV=production` and `POS_PUBLIC_ORIGIN` set to the site's exact HTTPS origin. The Node server serves `dist` and the API on port 3000. On IIS, install URL Rewrite and Application Request Routing, enable proxying, terminate HTTPS at IIS, and use the generated `dist/web.config` to forward all requests to the Node process. Set `PORT` if port 3000 is unavailable, and update `public/web.config` and `vite.config.js` accordingly.
 

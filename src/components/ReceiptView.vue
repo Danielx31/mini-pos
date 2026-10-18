@@ -50,6 +50,7 @@ function getPaymentMethodLabel(method) {
     <div class="text-center mb-6 border-b-2 border-slate-300 pb-4">
       <h1 class="text-2xl font-bold text-slate-900">RECEIPT</h1>
       <p class="text-xs text-slate-600 mt-1">Transaction #{{ order.orderNumber }}</p>
+      <p v-if="order.refunded" class="mt-1 text-xs font-bold text-slate-700">Refund recorded in Mini POS; any external funds must be returned separately.</p>
     </div>
 
     <!-- Date & Time -->
@@ -104,11 +105,13 @@ function getPaymentMethodLabel(method) {
 
     <!-- Payment Information -->
     <div class="space-y-2 mb-6 border-b border-slate-300 pb-4">
-      <p class="text-xs font-bold uppercase text-slate-600 tracking-wide">Payment Details</p>
+      <p class="text-xs font-bold uppercase text-slate-600 tracking-wide">Recorded Payment Information</p>
       <div class="flex justify-between text-xs text-slate-700">
-        <span>Payment Method:</span>
+        <span>Method Recorded:</span>
         <span class="font-semibold">{{ getPaymentMethodLabel(order.payment.paymentMethod) }}</span>
       </div>
+      <p v-if="order.payment.paymentMethod !== 'cash'" class="text-xs text-slate-700">Status: Not verified by Mini POS. This POS did not charge or capture the payment.</p>
+      <p v-else class="text-xs text-slate-700">Status: Cash amount entered by staff.</p>
 
       <div v-if="order.payment.paymentMethod === 'cash'" class="space-y-1 bg-slate-50 p-2 rounded">
         <div class="flex justify-between text-xs text-slate-700">
@@ -124,8 +127,8 @@ function getPaymentMethodLabel(method) {
 
     <!-- Footer -->
     <div class="text-center space-y-2 text-xs text-slate-600">
-      <p class="font-semibold text-slate-900 text-sm">Thank you for your purchase!</p>
-      <p>{{ order.itemCount }} item{{ order.itemCount !== 1 ? "s" : "" }} purchased</p>
+      <p class="font-semibold text-slate-900 text-sm">Thank you for your order!</p>
+      <p>{{ order.itemCount }} item{{ order.itemCount !== 1 ? "s" : "" }} recorded</p>
       <div class="pt-2 border-t border-slate-300 mt-4">
         <p class="text-slate-500">Please come again!</p>
       </div>

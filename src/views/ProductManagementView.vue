@@ -1,16 +1,19 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useProductsStore } from "../stores/products";
+import { useAuthStore } from "../stores/auth";
 import { useTaxStore } from "../stores/taxes";
 import { useCurrency } from "../composables/useFormatters";
 import AppNavbar from "../components/AppNavbar.vue";
 
 const productsStore = useProductsStore();
+const authStore = useAuthStore();
 const taxStore = useTaxStore();
 const { formatCurrency } = useCurrency();
 
 const searchTerm = ref("");
 const notice = ref(null);
+const deleteNotice = ref(null);
 const taxNotice = ref(null);
 const taxRateInputs = ref({});
 
@@ -35,6 +38,12 @@ const filteredProducts = computed(() => {
       p.id.toLowerCase().includes(normalized) ||
       p.sku?.toLowerCase().includes(normalized)
   );
+});
+const pendingRemovalIds = computed(() => new Set(productsStore.deletionRequests.map((request) => request.productId)));
+
+onMounted(async () => {
+  const result = await productsStore.loadDeletionRequests();
+  if (!result.ok) notice.value = result;
 });
 
 watch(
@@ -102,15 +111,24 @@ async function submitEdit() {
 }
 
 async function confirmDelete(product) {
-  const confirmed = window.confirm(`Are you sure you want to delete "${product.name}"?`);
+  const action = authStore.isAdmin ? "remove from the active catalog" : "request admin approval to remove";
+  const confirmed = window.confirm(`Do you want to ${action} "${product.name}"? Past sales and refunds will be kept.`);
   if (!confirmed) return;
 
-  const result = await productsStore.deleteProduct(product.id);
-  notice.value = result;
+  notice.value = null;
+  const result = authStore.isAdmin
+    ? await productsStore.deleteProduct(product.id)
+    : await productsStore.requestProductRemoval(product.id);
+  deleteNotice.value = result;
+}
+
+async function reviewRemoval(request, decision) {
+  if (decision === "approve" && !window.confirm(`Remove "${request.productName}" from the active catalog?`)) return;
+  deleteNotice.value = await productsStore.reviewDeletionRequest(request.id, decision);
 }
 
 async function confirmClear() {
-  const confirmed = window.confirm("Delete every product in the catalog? This cannot be undone.");
+  const confirmed = window.confirm("Remove every active product from the catalog? Past sales and refunds will be kept.");
   if (!confirmed) return;
 
   const result = await productsStore.clearCatalog();
@@ -162,7 +180,7 @@ async function resetTaxRates() {
           <p class="text-sm font-medium text-slate-500">Quick Actions</p>
           <div class="mt-1 flex flex-wrap gap-2">
             <button class="rounded-2xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 transition-colors" @click="openAddForm">+ Add Product</button>
-            <button v-if="productsStore.totalProducts > 0" class="rounded-2xl border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors" @click="confirmClear">Clear Catalog</button>
+            <button v-if="authStore.isAdmin && productsStore.totalProducts > 0" class="rounded-2xl border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors" @click="confirmClear">Clear Catalog</button>
           </div>
         </div>
       </div>
@@ -284,7 +302,33 @@ async function resetTaxRates() {
         </div>
       </div>
 
+      <div v-if="deleteNotice" role="status" aria-live="polite" class="mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm" :class="deleteNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-700'">
+        <span>{{ deleteNotice.message }}</span>
+        <button type="button" class="font-semibold hover:underline" @click="deleteNotice = null">Dismiss</button>
+      </div>
+
+      <section v-if="productsStore.deletionRequests.length > 0" class="mb-6 rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 shadow-sm">
+        <h2 class="text-lg font-semibold text-amber-950">{{ authStore.isAdmin ? 'Removal requests awaiting approval' : 'Your removal requests' }}</h2>
+        <div class="mt-4 space-y-3">
+          <div v-for="request in productsStore.deletionRequests" :key="request.id" class="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="font-semibold text-slate-900">{{ request.productName }}</p>
+              <p class="text-xs text-slate-600">Requested by {{ request.requesterName }} · {{ new Date(request.requestedAt).toLocaleString() }}</p>
+            </div>
+            <div v-if="authStore.isAdmin" class="flex gap-2">
+              <button type="button" class="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500" @click="reviewRemoval(request, 'approve')">Approve removal</button>
+              <button type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" @click="reviewRemoval(request, 'reject')">Reject</button>
+            </div>
+            <span v-else class="text-sm font-semibold text-amber-800">Pending admin approval</span>
+          </div>
+        </div>
+      </section>
+
       <div class="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="border-b border-slate-200 px-5 py-4">
+          <p class="text-sm text-slate-600">{{ authStore.isAdmin ? 'Removing a product hides it from the POS and customer menu. Past sales and refunds remain available.' : 'Managers can request product removal. An admin must approve before the product leaves the catalog.' }}</p>
+        </div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-slate-200 bg-slate-50">
@@ -320,12 +364,13 @@ async function resetTaxRates() {
               <td class="px-5 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors" @click="openEditForm(product)">Edit</button>
-                  <button class="rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors" @click="confirmDelete(product)">Delete</button>
+                  <button class="rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50" :disabled="!authStore.isAdmin && pendingRemovalIds.has(product.id)" @click="confirmDelete(product)">{{ authStore.isAdmin ? 'Remove' : pendingRemovalIds.has(product.id) ? 'Pending approval' : 'Request removal' }}</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
+        </div>
 
         <div v-if="filteredProducts.length === 0" class="py-8 text-center text-sm text-slate-500">{{ productsStore.totalProducts === 0 ? 'Your catalog is empty. Add your first product above.' : 'No products found. Try clearing the search.' }}</div>
       </div>

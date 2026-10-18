@@ -61,7 +61,7 @@ async function confirmClearHistory() {
 }
 
 async function confirmRefund(order) {
-  const confirmed = window.confirm(`Are you sure you want to refund order ${order.orderNumber}? This will restore inventory and cannot be undone.`);
+  const confirmed = window.confirm(`Record a refund for order ${order.orderNumber} and restore inventory? Mini POS does not return card or e-wallet funds. Handle any external refund separately. This cannot be undone.`);
   if (!confirmed) return;
   const result = await ordersStore.refundOrder(order.orderNumber);
   if (result.ok) {
@@ -83,7 +83,7 @@ async function confirmRefund(order) {
           <p class="mt-1 text-2xl font-bold text-slate-900">{{ ordersStore.totalOrders }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm font-medium text-slate-500">Total Revenue</p>
+          <p class="text-sm font-medium text-slate-500">Recorded Sales Total</p>
           <p class="mt-1 text-2xl font-bold text-emerald-600">{{ formatCurrency(ordersStore.totalRevenue) }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -121,14 +121,15 @@ async function confirmRefund(order) {
                 </svg>
               </div>
               <div class="min-w-0">
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                   <p class="truncate text-sm font-semibold text-slate-800">{{ order.orderNumber }}</p>
+                  <span v-if="order.payment && order.payment.paymentMethod !== 'cash'" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Payment unverified</span>
                   <span v-if="order.refunded" class="inline-flex rounded-full px-2 py-1 text-xs font-semibold bg-rose-100 text-rose-700">
-                    Refunded
+                    Refund recorded
                   </span>
                 </div>
                 <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(order.checkedOutAt) }} · {{ order.itemCount }} {{ order.itemCount === 1 ? 'item' : 'items' }}</p>
-                <p v-if="order.refunded" class="mt-1 text-xs text-rose-600">Refunded on {{ formatDateTime(order.refundedAt) }}</p>
+                <p v-if="order.refunded" class="mt-1 text-xs text-rose-600">Refund recorded on {{ formatDateTime(order.refundedAt) }}</p>
               </div>
             </div>
             <div class="flex items-center gap-3 text-slate-900">
@@ -169,7 +170,7 @@ async function confirmRefund(order) {
             <!-- Payment Information -->
             <div v-if="order.payment" class="mt-4 border-t border-slate-200 pt-4">
               <div class="flex items-center justify-between">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Method Recorded</p>
                 <span
                   class="inline-flex rounded-full px-3 py-1 text-xs font-semibold"
                   :class="{
@@ -187,6 +188,9 @@ async function confirmRefund(order) {
                   }}
                 </span>
               </div>
+
+              <p v-if="order.payment.paymentMethod !== 'cash'" class="mt-2 text-xs text-amber-800">Payment status: Not verified by Mini POS. No card or wallet charge was made by this app.</p>
+              <p v-else class="mt-2 text-xs text-slate-600">Payment status: Cash amount entered by staff.</p>
 
               <!-- Cash Payment Details -->
               <div
@@ -218,7 +222,7 @@ async function confirmRefund(order) {
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
-                Refund
+                Record Refund
               </button>
               <button
                 @click="openReceiptModal(order)"

@@ -8,7 +8,7 @@ export const PAYMENT_METHODS = {
 };
 
 export const usePaymentStore = defineStore("payment", () => {
-  const paymentMethod = ref(PAYMENT_METHODS.CARD);
+  const paymentMethod = ref(null);
   const cashTendered = ref(0);
   const isPaymentModalOpen = ref(false);
 
@@ -41,7 +41,7 @@ export const usePaymentStore = defineStore("payment", () => {
     if (paymentMethod.value === PAYMENT_METHODS.CASH) {
       return cashTendered.value > 0 && cashTendered.value >= totalAmount;
     }
-    return true;
+    return [PAYMENT_METHODS.CARD, PAYMENT_METHODS.EWALKET].includes(paymentMethod.value);
   }
 
   function isCashPaymentMethod() {
@@ -49,6 +49,8 @@ export const usePaymentStore = defineStore("payment", () => {
   }
 
   function openPaymentModal() {
+    paymentMethod.value = null;
+    cashTendered.value = 0;
     isPaymentModalOpen.value = true;
   }
 
@@ -57,7 +59,7 @@ export const usePaymentStore = defineStore("payment", () => {
   }
 
   function resetPayment() {
-    paymentMethod.value = PAYMENT_METHODS.CARD;
+    paymentMethod.value = null;
     cashTendered.value = 0;
     isPaymentModalOpen.value = false;
   }

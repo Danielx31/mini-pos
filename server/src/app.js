@@ -48,7 +48,26 @@ function cents(value, label) {
 }
 
 async function readProducts(db) {
-  return (await db.prepare("SELECT * FROM products ORDER BY name").all()).map(productDto);
+  return (await db.prepare("SELECT * FROM products WHERE active=1 ORDER BY name").all()).map(productDto);
+}
+
+async function ensureProductIsNotParked(db, productId) {
+  const parked = (await db.prepare("SELECT payload_json FROM holds").all())
+    .some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === productId));
+  if (parked) throw new ApiError(409, "This product is in a parked order. Remove that parked order before removing the product.");
+}
+
+async function readPendingProductRequests(db, requesterId = null) {
+  const sql = `SELECT requests.id, requests.product_id, requests.product_name, requests.requested_at,
+    users.display_name AS requester_name FROM product_delete_requests AS requests
+    JOIN users ON users.id=requests.requested_by WHERE requests.status='pending'`;
+  const rows = requesterId
+    ? await db.prepare(`${sql} AND requests.requested_by=? ORDER BY requests.requested_at`).all(requesterId)
+    : await db.prepare(`${sql} ORDER BY requests.requested_at`).all();
+  return rows.map((row) => ({
+    id: row.id, productId: row.product_id, productName: row.product_name,
+    requestedAt: row.requested_at, requesterName: row.requester_name,
+  }));
 }
 
 async function readCoupons(db) {
@@ -86,7 +105,7 @@ async function quote(db, requestedItems, couponCode) {
     seen.add(requested.productId);
     const quantity = wholeNumber(requested.quantity, "Quantity");
     requireValid(quantity >= 1 && quantity <= MAX_QUANTITY, "Quantity must be between 1 and 99.");
-    const product = await db.prepare("SELECT * FROM products WHERE id = ?").get(requested.productId);
+    const product = await db.prepare("SELECT * FROM products WHERE id = ? AND active=1").get(requested.productId);
     if (!product) throw new ApiError(409, `Product ${requested.productId} is no longer available.`);
     if (product.stock < quantity) throw new ApiError(409, `Only ${product.stock} of ${product.name} available.`);
     items.push({ productId: product.id, name: product.name, category: product.category, price: product.price_cents / 100, quantity, lineCents: product.price_cents * quantity });
@@ -159,6 +178,10 @@ export function createApp(db, options = {}) {
     if (!MANAGEMENT_ROLES.includes(req.session.role)) return next(new ApiError(403, "Manager access required."));
     next();
   }
+  function managerOnly(req, _res, next) {
+    if (req.session.role !== "manager") return next(new ApiError(403, "Manager access required."));
+    next();
+  }
 
   app.post("/api/v1/auth/login", async (req, res, next) => {
     try {
@@ -206,7 +229,7 @@ export function createApp(db, options = {}) {
   app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
   app.get("/api/v1/menu", async (_req, res, next) => {
     try {
-      const products = await db.prepare("SELECT name,category,price_cents FROM products WHERE stock > 0 ORDER BY category,name").all();
+      const products = await db.prepare("SELECT name,category,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all();
       res.json(products.map((product) => ({ name: product.name, category: product.category, price: product.price_cents / 100 })));
     } catch (error) { next(error); }
   });
@@ -229,31 +252,74 @@ export function createApp(db, options = {}) {
   app.put("/api/v1/products/:id", auth, manager, async (req, res, next) => {
     try {
       const input = productInput(req.body);
-      const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=?").run(input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold, req.params.id);
+      const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=? AND active=1").run(input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold, req.params.id);
       if (!result.changes) throw new ApiError(404, "Product not found.");
       res.json({ ok: true, message: `\"${input.name}\" updated successfully.`, products: await readProducts(db) });
     } catch (error) { next(error); }
   });
-  app.delete("/api/v1/products/:id", auth, manager, async (req, res, next) => {
+  app.get("/api/v1/product-delete-requests", auth, manager, async (req, res, next) => {
     try {
-      const result = await db.transaction(async () => {
-        const hasSales = (await db.prepare("SELECT payload_json FROM orders").all()).some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === req.params.id));
-        if (hasSales) throw new ApiError(409, "Products used in recorded sales cannot be deleted. Set stock to zero instead.");
-        const hasHold = (await db.prepare("SELECT payload_json FROM holds").all()).some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === req.params.id));
-        if (hasHold) throw new ApiError(409, "Products in parked orders cannot be deleted. Remove the parked order first.");
-        return db.prepare("DELETE FROM products WHERE id=?").run(req.params.id);
-      });
-      if (!result.changes) throw new ApiError(404, "Product not found.");
-      res.json({ ok: true, message: "Product deleted.", products: await readProducts(db) });
+      res.json(await readPendingProductRequests(db, req.session.role === "manager" ? req.session.user_id : null));
     } catch (error) { next(error); }
   });
-  app.delete("/api/v1/products", auth, manager, async (_req, res, next) => {
+  app.post("/api/v1/products/:id/delete-request", auth, managerOnly, async (req, res, next) => {
+    try {
+      const result = await db.transaction(async () => {
+        const product = await db.prepare("SELECT id,name FROM products WHERE id=? AND active=1").get(req.params.id);
+        if (!product) throw new ApiError(404, "Product not found in the active catalog.");
+        await ensureProductIsNotParked(db, product.id);
+        await db.prepare("INSERT INTO product_delete_requests (id,product_id,product_name,requested_by,requested_at,status,pending_product_id) VALUES (?,?,?,?,?,'pending',?)")
+          .run(randomUUID(), product.id, product.name, req.session.user_id, new Date().toISOString(), product.id);
+        return product;
+      });
+      res.status(201).json({ ok: true, message: `Removal request for \"${result.name}\" sent to an admin.`, requests: await readPendingProductRequests(db, req.session.user_id) });
+    } catch (error) {
+      if (error.code === "23505") return next(new ApiError(409, "A removal request for this product is already pending admin approval."));
+      next(error);
+    }
+  });
+  app.post("/api/v1/product-delete-requests/:id/decision", auth, admin, async (req, res, next) => {
+    try {
+      requireValid(["approve", "reject"].includes(req.body?.decision), "Decision must be approve or reject.");
+      const decision = req.body.decision;
+      const request = await db.transaction(async () => {
+        const pending = await db.prepare("SELECT * FROM product_delete_requests WHERE id=? AND status='pending'").get(req.params.id);
+        if (!pending) throw new ApiError(404, "Pending removal request not found.");
+        if (decision === "approve") {
+          const product = await db.prepare("SELECT id FROM products WHERE id=? AND active=1").get(pending.product_id);
+          if (!product) throw new ApiError(409, "Product is no longer in the active catalog.");
+          await ensureProductIsNotParked(db, product.id);
+          await db.prepare("UPDATE products SET active=0, archived_name=name, archived_sku=sku, name='Archived ' || id, sku=NULL WHERE id=? AND active=1").run(product.id);
+        }
+        await db.prepare("UPDATE product_delete_requests SET status=?, pending_product_id=NULL, reviewed_by=?, reviewed_at=? WHERE id=? AND status='pending'")
+          .run(decision === "approve" ? "approved" : "rejected", req.session.user_id, new Date().toISOString(), pending.id);
+        return pending;
+      });
+      res.json({ ok: true, message: decision === "approve" ? `\"${request.product_name}\" removed from the active catalog.` : `Removal request for \"${request.product_name}\" rejected.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/products/:id", auth, admin, async (req, res, next) => {
+    try {
+      const product = await db.transaction(async () => {
+        const active = await db.prepare("SELECT id,name FROM products WHERE id=? AND active=1").get(req.params.id);
+        if (!active) throw new ApiError(404, "Product not found in the active catalog.");
+        await ensureProductIsNotParked(db, active.id);
+        await db.prepare("UPDATE products SET active=0, archived_name=name, archived_sku=sku, name='Archived ' || id, sku=NULL WHERE id=? AND active=1").run(active.id);
+        await db.prepare("UPDATE product_delete_requests SET status='approved', pending_product_id=NULL, reviewed_by=?, reviewed_at=? WHERE pending_product_id=?")
+          .run(req.session.user_id, new Date().toISOString(), active.id);
+        return active;
+      });
+      res.json({ ok: true, message: `\"${product.name}\" removed from the active catalog. Past sales and refunds remain intact.`, products: await readProducts(db), requests: await readPendingProductRequests(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/products", auth, admin, async (req, res, next) => {
     try { await db.transaction(async () => {
-      if (await db.prepare("SELECT 1 FROM orders LIMIT 1").get()) throw new ApiError(409, "The catalog cannot be cleared after sales have been recorded.");
       if (await db.prepare("SELECT 1 FROM holds LIMIT 1").get()) throw new ApiError(409, "Remove parked orders before clearing the catalog.");
-      await db.prepare("DELETE FROM products").run();
+      await db.prepare("UPDATE products SET active=0, archived_name=name, archived_sku=sku, name='Archived ' || id, sku=NULL WHERE active=1").run();
+      await db.prepare("UPDATE product_delete_requests SET status='approved', pending_product_id=NULL, reviewed_by=?, reviewed_at=? WHERE status='pending'")
+        .run(req.session.user_id, new Date().toISOString());
     });
-    res.json({ ok: true, message: "Product catalog cleared.", products: await readProducts(db) });
+    res.json({ ok: true, message: "Active product catalog cleared. Past sales and refunds remain intact.", products: await readProducts(db), requests: await readPendingProductRequests(db) });
     } catch (error) { next(error); }
   });
   app.put("/api/v1/tax-rates/:category", auth, manager, async (req, res, next) => {
@@ -321,7 +387,12 @@ export function createApp(db, options = {}) {
         if (summary.coupon) await db.prepare("UPDATE coupons SET used_count=used_count+1 WHERE id=?").run(summary.coupon.id);
         const payload = {
           ...summary, orderNumber: `ORD-${randomUUID()}`, checkedOutAt: new Date().toISOString(),
-          payment: { paymentMethod, cashTendered: tenderedCents === null ? null : tenderedCents / 100, change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100 },
+          payment: {
+            paymentMethod,
+            verificationStatus: paymentMethod === "cash" ? "cash_recorded" : "not_verified",
+            cashTendered: tenderedCents === null ? null : tenderedCents / 100,
+            change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100,
+          },
         };
         await db.prepare("INSERT INTO orders (order_number,payload_json,created_at,created_by,checkout_key) VALUES (?,?,?,?,?)").run(payload.orderNumber, JSON.stringify(payload), payload.checkedOutAt, req.session.user_id, req.body.checkoutKey);
         return { order: payload, products: await readProducts(db), coupons: await readCoupons(db) };
@@ -354,7 +425,7 @@ export function createApp(db, options = {}) {
         }
         await db.prepare("UPDATE orders SET refunded=1, refunded_at=? WHERE order_number=?").run(new Date().toISOString(), req.params.number);
       });
-      res.json({ ok: true, message: `Order ${req.params.number} has been refunded.`, products: await readProducts(db), orders: await readOrders(db) });
+      res.json({ ok: true, message: `Refund recorded for ${req.params.number}; inventory restored. Return any card or e-wallet funds outside Mini POS.`, products: await readProducts(db), orders: await readOrders(db) });
     } catch (error) { next(error); }
   });
   app.get("/api/v1/orders/archive", auth, manager, async (_req, res) => {

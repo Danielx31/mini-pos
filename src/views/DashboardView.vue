@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "../stores/pos";
 import { useCouponsStore } from "../stores/coupons";
 import { usePaymentStore } from "../stores/payment";
@@ -17,6 +17,10 @@ const { formatDateTime } = useDateTime();
 const { generatePDF, printReceipt } = useReceiptPdf();
 const checkoutNotice = ref(null);
 const barcodeInput = ref("");
+const barcodeInputElement = ref(null);
+const barcodeNotice = ref(null);
+const BARCODE_IDLE_MS = 450;
+let barcodeTimer = null;
 const parkedCustomerLabel = ref("");
 const parkedOrderNote = ref("");
 
@@ -34,23 +38,35 @@ function addProductToCart(product) {
 }
 
 function handleBarcodeSubmit() {
-  if (typeof posStore.addToCartByBarcode !== "function") {
-    checkoutNotice.value = {
-      ok: false,
-      message: "Barcode support is not yet available in the current build. Please save files and refresh the page.",
-    };
-    return;
-  }
-
+  clearTimeout(barcodeTimer);
+  if (!barcodeInput.value.trim()) return;
   const result = posStore.addToCartByBarcode(barcodeInput.value);
   barcodeInput.value = "";
-  if (!result.ok) {
-    checkoutNotice.value = result;
-    return;
-  }
-
-  checkoutNotice.value = result;
+  barcodeNotice.value = result;
+  if (result.ok) checkoutNotice.value = null;
+  barcodeInputElement.value?.focus({ preventScroll: true });
 }
+
+watch(barcodeInput, (code) => {
+  clearTimeout(barcodeTimer);
+  if (!code.trim()) return;
+  barcodeNotice.value = null;
+
+  barcodeTimer = setTimeout(() => {
+    const normalized = code.trim().toLowerCase();
+    const productCodes = posStore.products.flatMap((product) =>
+      [product.id, product.sku].filter(Boolean).map((value) => value.toLowerCase()),
+    );
+    const exactMatch = productCodes.includes(normalized);
+    const couldBeLongerCode = productCodes.some((value) => value.length > normalized.length && value.startsWith(normalized));
+    if (exactMatch && !couldBeLongerCode && barcodeInput.value.trim() === code.trim()) handleBarcodeSubmit();
+  }, BARCODE_IDLE_MS);
+});
+
+onMounted(() => {
+  if (window.matchMedia("(pointer: fine)").matches) barcodeInputElement.value?.focus({ preventScroll: true });
+});
+onUnmounted(() => clearTimeout(barcodeTimer));
 
 function decreaseQuantity(item) {
   posStore.updateQuantity(item.productId, item.quantity - 1);
@@ -58,7 +74,7 @@ function decreaseQuantity(item) {
 
 function increaseQuantity(item) {
   const result = posStore.updateQuantity(item.productId, item.quantity + 1);
-  if (!result.ok) {
+  if (result?.ok === false) {
     checkoutNotice.value = result;
   } else {
     checkoutNotice.value = null;
@@ -119,7 +135,7 @@ async function handlePaymentConfirm() {
     selectedOrder.value = result.order;
     isReceiptModalOpen.value = true;
   } else {
-    // Show error notice if payment failed
+    // Show the sale recording error without implying that a payment was attempted.
     checkoutNotice.value = result;
   }
 }
@@ -201,10 +217,13 @@ function handlePrint() {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h4m-4 5h16" />
                 </svg>
                 <input
+                  ref="barcodeInputElement"
                   v-model="barcodeInput"
                   @keydown.enter.prevent="handleBarcodeSubmit"
                   type="text"
-                  placeholder="Scan barcode / enter SKU"
+                  aria-label="Scan or type a barcode or SKU"
+                  autocomplete="off"
+                  placeholder="Scan or type barcode / SKU"
                   class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-10 py-3 pr-28 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
                 <button
@@ -217,6 +236,9 @@ function handlePrint() {
               </div>
             </div>
           </div>
+
+          <p class="-mt-3 mb-4 text-xs text-slate-500">Matching barcodes add automatically. Press Enter or Add to check a code manually.</p>
+          <p v-if="barcodeNotice" role="status" aria-live="polite" class="mb-4 rounded-2xl border px-4 py-2 text-sm" :class="barcodeNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-700'">{{ barcodeNotice.message }}</p>
 
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <article v-for="product in posStore.filteredProducts" :key="product.id" class="group rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg">
@@ -416,6 +438,8 @@ function handlePrint() {
           <div>
             <h2 class="text-lg font-semibold text-slate-900">Sale Recorded</h2>
             <p class="mt-1 text-sm text-slate-500">Receipt - {{ selectedOrder?.orderNumber }}</p>
+            <p v-if="selectedOrder?.payment?.paymentMethod !== 'cash'" class="mt-2 text-sm font-medium text-amber-800">{{ selectedOrder?.payment?.paymentMethod === 'card' ? 'Card' : 'E-wallet' }} method recorded. Mini POS did not charge or verify this payment.</p>
+            <p v-else class="mt-2 text-sm text-slate-600">Cash amount recorded.</p>
           </div>
           <button
             @click="closeReceiptModal"
