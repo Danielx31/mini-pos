@@ -129,7 +129,7 @@ async function confirmRefund(order) {
           <p class="mt-1 text-2xl font-bold text-emerald-600">{{ formatCurrency(ordersStore.totalRevenue) }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 shadow-sm">
-          <p class="text-sm font-medium text-amber-800">Outstanding Utang</p>
+          <p class="text-sm font-medium text-amber-800">Outstanding POS Utang</p>
           <p class="mt-1 text-2xl font-bold text-amber-950">{{ formatCurrency(ordersStore.outstandingCredit) }}</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">

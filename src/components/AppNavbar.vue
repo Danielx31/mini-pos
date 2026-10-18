@@ -93,6 +93,12 @@ async function handleLogout() {
               </svg>
               Orders
             </button>
+            <button
+              class="inline-flex items-center gap-2 rounded-full border border-amber-600 bg-amber-900/40 px-3 py-2 text-sm font-medium text-amber-100 hover:border-amber-400 hover:text-white transition"
+              @click="router.push({ name: ROUTE_NAMES.CREDITS })"
+            >
+              Utang list
+            </button>
           </template>
 
           <RouterLink

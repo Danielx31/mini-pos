@@ -108,6 +108,57 @@ async function readCreditPayments(db, orderNumber) {
   }));
 }
 
+async function readCreditSales(db) {
+  const rows = await db.prepare(`SELECT credit_sales.*, orders.payload_json, orders.refunded, orders.archived
+    FROM credit_sales JOIN orders ON orders.order_number=credit_sales.order_number
+    ORDER BY credit_sales.created_at DESC`).all();
+  const payments = await db.prepare("SELECT order_number,amount_cents FROM credit_payments").all();
+  const paidByOrder = new Map();
+  for (const payment of payments) {
+    paidByOrder.set(payment.order_number, (paidByOrder.get(payment.order_number) ?? 0) + payment.amount_cents);
+  }
+  return rows.map((row) => {
+    const order = JSON.parse(row.payload_json);
+    const paidCents = paidByOrder.get(row.order_number) ?? 0;
+    return {
+      orderNumber: row.order_number, checkedOutAt: order.checkedOutAt,
+      customerName: row.customer_name, customerContact: row.customer_contact,
+      dueDate: row.due_date, total: row.total_cents / 100,
+      paid: paidCents / 100, balance: row.balance_cents / 100,
+      status: row.refunded ? "refunded" : row.balance_cents === 0 ? "paid" : paidCents > 0 ? "partial" : "unpaid",
+      archived: Boolean(row.archived),
+      items: order.items.map((item) => ({
+        productId: item.productId, name: item.name, quantity: item.quantity,
+        price: item.price, lineTotal: Math.round(item.price * item.quantity * 100) / 100,
+      })),
+    };
+  });
+}
+
+async function readOpeningCredits(db) {
+  const rows = await db.prepare("SELECT * FROM opening_credits ORDER BY created_at DESC").all();
+  const payments = await db.prepare(`SELECT payments.opening_credit_id,payments.id,payments.amount_cents,payments.note,
+    payments.received_at,users.display_name AS received_by
+    FROM opening_credit_payments AS payments JOIN users ON users.id=payments.received_by
+    ORDER BY payments.received_at DESC`).all();
+  const paymentsByCredit = new Map();
+  for (const payment of payments) {
+    if (!paymentsByCredit.has(payment.opening_credit_id)) paymentsByCredit.set(payment.opening_credit_id, []);
+    paymentsByCredit.get(payment.opening_credit_id).push({
+      id: payment.id, amount: payment.amount_cents / 100, note: payment.note,
+      receivedAt: payment.received_at, receivedBy: payment.received_by,
+    });
+  }
+  return rows.map((row) => ({
+    id: row.id, customerName: row.customer_name, customerContact: row.customer_contact,
+    itemDetails: row.item_details, priorDate: row.prior_date, recordedAt: row.created_at,
+    total: row.total_cents / 100, paid: (row.total_cents - row.balance_cents) / 100,
+    balance: row.balance_cents / 100,
+    status: row.balance_cents === 0 ? "paid" : row.balance_cents < row.total_cents ? "partial" : "unpaid",
+    payments: paymentsByCredit.get(row.id) ?? [],
+  }));
+}
+
 async function readOrders(db, archived = 0) {
   const rows = await db.prepare(`SELECT orders.*, credit_sales.customer_name,credit_sales.customer_contact,
     credit_sales.due_date,credit_sales.total_cents,credit_sales.balance_cents
@@ -485,6 +536,73 @@ export function createApp(db, options = {}) {
       });
       const repaymentNotice = hadCreditPayments ? " Return any collected utang repayments outside Mini POS." : "";
       res.json({ ok: true, message: `Refund recorded for ${req.params.number}; inventory restored. Return any card or e-wallet funds outside Mini POS.${repaymentNotice}`, products: await readProducts(db), orders: await readOrders(db) });
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/credit-sales", auth, async (_req, res, next) => {
+    try { res.json(await readCreditSales(db)); }
+    catch (error) { next(error); }
+  });
+  app.get("/api/v1/opening-credits", auth, async (_req, res, next) => {
+    try { res.json(await readOpeningCredits(db)); }
+    catch (error) { next(error); }
+  });
+  app.post("/api/v1/opening-credits", auth, async (req, res, next) => {
+    try {
+      requireValid(typeof req.body?.entryKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.entryKey), "Invalid opening credit request ID.");
+      const customerName = text(req.body.customerName, 100, "Customer name");
+      const customerContact = optionalText(req.body.customerContact, 100) || null;
+      const itemDetails = optionalText(req.body.itemDetails, 500) || null;
+      const priorDate = optionalText(req.body.priorDate, 10) || null;
+      if (priorDate) requireValid(/^\d{4}-\d{2}-\d{2}$/.test(priorDate) && !Number.isNaN(Date.parse(`${priorDate}T00:00:00Z`)) && new Date(`${priorDate}T00:00:00Z`).toISOString().slice(0, 10) === priorDate, "Prior date must be a valid date.");
+      const totalCents = cents(req.body.amount, "Opening balance");
+      requireValid(totalCents > 0, "Opening balance must be greater than zero.");
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT * FROM opening_credits WHERE entry_key=?").get(req.body.entryKey);
+        if (previous) {
+          if (previous.customer_name !== customerName || previous.customer_contact !== customerContact || previous.item_details !== itemDetails || previous.prior_date !== priorDate || previous.total_cents !== totalCents) {
+            throw new ApiError(409, "Opening credit request ID was already used for a different balance.");
+          }
+          return { duplicate: true };
+        }
+        await db.prepare(`INSERT INTO opening_credits
+          (id,entry_key,customer_name,customer_contact,item_details,prior_date,total_cents,balance_cents,created_at,created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`)
+          .run(randomUUID(), req.body.entryKey, customerName, customerContact, itemDetails, priorDate, totalCents, totalCents, new Date().toISOString(), req.session.user_id);
+        return { duplicate: false };
+      });
+      res.status(result.duplicate ? 200 : 201).json({
+        ok: true, message: result.duplicate ? "Opening balance was already recorded." : "Opening balance recorded.",
+        openingCredits: await readOpeningCredits(db),
+      });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/v1/opening-credits/:id/payments", auth, async (req, res, next) => {
+    try {
+      const amountCents = cents(req.body?.amount, "Repayment amount");
+      requireValid(amountCents > 0, "Repayment amount must be greater than zero.");
+      requireValid(typeof req.body?.paymentKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.paymentKey), "Invalid repayment request ID.");
+      const note = optionalText(req.body?.note, 200) || null;
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT opening_credit_id,amount_cents FROM opening_credit_payments WHERE payment_key=?").get(req.body.paymentKey);
+        if (previous) {
+          if (previous.opening_credit_id !== req.params.id || previous.amount_cents !== amountCents) throw new ApiError(409, "Repayment request ID was already used for a different payment.");
+          return { duplicate: true };
+        }
+        const updated = await db.prepare(`UPDATE opening_credits SET balance_cents=balance_cents-CAST(? AS INTEGER)
+          WHERE id=? AND balance_cents>=CAST(? AS INTEGER)`).run(amountCents, req.params.id, amountCents);
+        if (!updated.changes) {
+          if (!await db.prepare("SELECT 1 FROM opening_credits WHERE id=?").get(req.params.id)) throw new ApiError(404, "Opening credit not found.");
+          throw new ApiError(409, "Repayment exceeds the outstanding balance.");
+        }
+        await db.prepare(`INSERT INTO opening_credit_payments
+          (id,opening_credit_id,payment_key,amount_cents,note,received_by,received_at) VALUES (?,?,?,?,?,?,?)`)
+          .run(randomUUID(), req.params.id, req.body.paymentKey, amountCents, note, req.session.user_id, new Date().toISOString());
+        return { duplicate: false };
+      });
+      res.status(result.duplicate ? 200 : 201).json({
+        ok: true, message: result.duplicate ? "Repayment was already recorded." : "Cash repayment recorded.",
+        openingCredits: await readOpeningCredits(db),
+      });
     } catch (error) { next(error); }
   });
   app.get("/api/v1/orders/:number/credit-payments", auth, async (req, res, next) => {

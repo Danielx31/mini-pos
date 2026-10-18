@@ -134,6 +134,19 @@ export async function initializeDatabase(db) {
         received_by TEXT NOT NULL REFERENCES users(id), received_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_credit_payments_order ON credit_payments(order_number);
+      CREATE TABLE IF NOT EXISTS opening_credits (
+        id TEXT PRIMARY KEY, entry_key TEXT NOT NULL UNIQUE,
+        customer_name TEXT NOT NULL, customer_contact TEXT, item_details TEXT, prior_date TEXT,
+        total_cents INTEGER NOT NULL CHECK(total_cents > 0),
+        balance_cents INTEGER NOT NULL CHECK(balance_cents >= 0 AND balance_cents <= total_cents),
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE TABLE IF NOT EXISTS opening_credit_payments (
+        id TEXT PRIMARY KEY, opening_credit_id TEXT NOT NULL REFERENCES opening_credits(id),
+        payment_key TEXT NOT NULL UNIQUE, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+        note TEXT, received_by TEXT NOT NULL REFERENCES users(id), received_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_opening_credit_payments_credit ON opening_credit_payments(opening_credit_id);
       CREATE TABLE IF NOT EXISTS holds (
         hold_number TEXT PRIMARY KEY, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
         created_by TEXT NOT NULL REFERENCES users(id)

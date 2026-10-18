@@ -2,6 +2,7 @@ export const ROUTE_NAMES = Object.freeze({
   MENU: "menu",
   POS: "pos",
   ORDERS: "orders",
+  CREDITS: "credits",
   PRODUCTS: "products",
   ANALYTICS: "analytics",
   USERS: "users",

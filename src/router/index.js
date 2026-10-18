@@ -31,6 +31,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: "/credits",
+    name: ROUTE_NAMES.CREDITS,
+    component: () => import("../views/CreditSalesView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
     path: "/products",
     name: ROUTE_NAMES.PRODUCTS,
     component: ProductManagementView,
