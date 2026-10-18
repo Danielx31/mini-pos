@@ -1,242 +1,35 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { DEFAULT_PRODUCTS } from "../data/products";
-
-const STORAGE_KEY = "mini_pos_products";
+import { api } from "../lib/api";
 
 export const useProductsStore = defineStore("products", () => {
-  const products = ref(loadProductsFromStorage());
-
-  const categories = computed(() => {
-    const unique = new Set(products.value.map((p) => p.category));
-    return [...unique].sort();
-  });
-
+  const products = ref([]);
+  const categories = computed(() => [...new Set(products.value.map((product) => product.category))].sort());
   const totalProducts = computed(() => products.value.length);
+  const lowStockAlerts = computed(() => products.value.filter((product) => product.stock <= product.lowStockThreshold));
+  const outOfStockProducts = computed(() => products.value.filter((product) => product.stock === 0));
 
-  const lowStockAlerts = computed(() => {
-    return products.value.filter((p) => (p.stock || 0) <= (p.lowStockThreshold || 0));
-  });
-
-  const outOfStockProducts = computed(() => {
-    return products.value.filter((p) => (p.stock || 0) === 0);
-  });
-
-  function loadProductsFromStorage() {
+  async function mutate(path, method, body) {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Ensure all products have stock, lowStockThreshold, and SKU properties
-        return parsed.map(product => ({
-          ...product,
-          sku: product.sku?.trim() || product.id,
-          stock: product.stock ?? 0,
-          lowStockThreshold: product.lowStockThreshold ?? 0,
-        }));
-      }
-      return [...DEFAULT_PRODUCTS];
-    } catch {
-      return [...DEFAULT_PRODUCTS];
+      const result = await api(path, { method, body });
+      products.value = result.products;
+      return result;
+    } catch (error) {
+      return { ok: false, message: error.message };
     }
   }
 
-  function saveProductsToStorage() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(products.value));
-  }
-
-  function generateId() {
-    const maxNum = products.value.reduce((max, p) => {
-      const num = parseInt(p.id.replace("p-", ""), 10);
-      return Number.isFinite(num) && num > max ? num : max;
-    }, 0);
-    return `p-${String(maxNum + 1).padStart(3, "0")}`;
-  }
-
-  function addProduct({ name, category, price, stock, lowStockThreshold, sku }) {
-    const trimmedName = name.trim();
-    const trimmedCategory = category.trim();
-    const trimmedSku = sku?.trim();
-    const parsedPrice = parseFloat(price);
-    const parsedStock = parseInt(stock);
-    const parsedThreshold = parseInt(lowStockThreshold);
-
-    if (!trimmedName || !trimmedCategory || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return { ok: false, message: "Please fill in all fields with valid values." };
-    }
-
-    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
-      return { ok: false, message: "Stock quantity must be a valid non-negative number." };
-    }
-
-    if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0) {
-      return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
-    }
-
-    const duplicateName = products.value.some(
-      (p) => p.name.toLowerCase() === trimmedName.toLowerCase(),
-    );
-    if (duplicateName) {
-      return { ok: false, message: `A product named "${trimmedName}" already exists.` };
-    }
-
-    if (trimmedSku) {
-      const duplicateSku = products.value.some(
-        (p) => p.sku?.toLowerCase() === trimmedSku.toLowerCase(),
-      );
-      if (duplicateSku) {
-        return { ok: false, message: `The SKU "${trimmedSku}" is already assigned to another product.` };
-      }
-    }
-
-    const newProduct = {
-      id: generateId(),
-      sku: trimmedSku || undefined,
-      name: trimmedName,
-      category: trimmedCategory,
-      price: Math.round(parsedPrice * 100) / 100,
-      stock: parsedStock,
-      lowStockThreshold: parsedThreshold,
-    };
-
-    products.value.push(newProduct);
-    saveProductsToStorage();
-    return { ok: true, message: `"${trimmedName}" added successfully.` };
-  }
-
-  function updateProduct(id, { name, category, price, stock, lowStockThreshold, sku }) {
-    const trimmedName = name.trim();
-    const trimmedCategory = category.trim();
-    const trimmedSku = sku?.trim();
-    const parsedPrice = parseFloat(price);
-    const parsedStock = parseInt(stock);
-    const parsedThreshold = parseInt(lowStockThreshold);
-
-    if (!trimmedName || !trimmedCategory || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return { ok: false, message: "Please fill in all fields with valid values." };
-    }
-
-    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
-      return { ok: false, message: "Stock quantity must be a valid non-negative number." };
-    }
-
-    if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0) {
-      return { ok: false, message: "Low stock threshold must be a valid non-negative number." };
-    }
-
-    const duplicateName = products.value.some(
-      (p) => p.id !== id && p.name.toLowerCase() === trimmedName.toLowerCase(),
-    );
-    if (duplicateName) {
-      return { ok: false, message: `A product named "${trimmedName}" already exists.` };
-    }
-
-    if (trimmedSku) {
-      const duplicateSku = products.value.some(
-        (p) => p.id !== id && p.sku?.toLowerCase() === trimmedSku.toLowerCase(),
-      );
-      if (duplicateSku) {
-        return { ok: false, message: `The SKU "${trimmedSku}" is already assigned to another product.` };
-      }
-    }
-
-    const product = products.value.find((p) => p.id === id);
-    if (!product) {
-      return { ok: false, message: "Product not found." };
-    }
-
-    product.name = trimmedName;
-    product.category = trimmedCategory;
-    product.sku = trimmedSku || undefined;
-    product.price = Math.round(parsedPrice * 100) / 100;
-    product.stock = parsedStock;
-    product.lowStockThreshold = parsedThreshold;
-    saveProductsToStorage();
-    return { ok: true, message: `"${trimmedName}" updated successfully.` };
-  }
-
-  function deleteProduct(id) {
-    const product = products.value.find((p) => p.id === id);
-    if (!product) {
-      return { ok: false, message: "Product not found." };
-    }
-
-    products.value = products.value.filter((p) => p.id !== id);
-    saveProductsToStorage();
-    return { ok: true, message: `"${product.name}" deleted.` };
-  }
+  function addProduct(input) { return mutate("/products", "POST", input); }
+  function updateProduct(id, input) { return mutate(`/products/${encodeURIComponent(id)}`, "PUT", input); }
+  function deleteProduct(id) { return mutate(`/products/${encodeURIComponent(id)}`, "DELETE"); }
+  function clearCatalog() { return mutate("/products", "DELETE"); }
 
   function getProductByBarcode(code) {
-    const normalizedCode = String(code || "").trim().toLowerCase();
-    if (!normalizedCode) {
-      return null;
-    }
-
-    return products.value.find((product) => {
-      return (
-        product.id.toLowerCase() === normalizedCode ||
-        (product.sku && product.sku.toLowerCase() === normalizedCode)
-      );
-    }) || null;
+    const normalized = String(code ?? "").trim().toLowerCase();
+    return products.value.find((product) => product.id.toLowerCase() === normalized || product.sku?.toLowerCase() === normalized) ?? null;
   }
+  function checkStockAvailability(id, quantity) { return (products.value.find((product) => product.id === id)?.stock ?? 0) >= quantity; }
+  function getProductStock(id) { return products.value.find((product) => product.id === id)?.stock ?? 0; }
 
-  function incrementStock(productId, quantity) {
-    const product = products.value.find((p) => p.id === productId);
-    if (!product) {
-      return { ok: false, message: "Product not found." };
-    }
-
-    product.stock = (product.stock || 0) + quantity;
-    saveProductsToStorage();
-    return { ok: true, message: `Stock incremented for "${product.name}".` };
-  }
-
-  function decrementStock(productId, quantity) {
-    const product = products.value.find((p) => p.id === productId);
-    if (!product) {
-      return { ok: false, message: "Product not found." };
-    }
-
-    if ((product.stock || 0) < quantity) {
-      return { ok: false, message: `Insufficient stock for "${product.name}". Available: ${product.stock || 0}` };
-    }
-
-    product.stock = (product.stock || 0) - quantity;
-    saveProductsToStorage();
-    return { ok: true, message: `Stock decremented for "${product.name}".` };
-  }
-
-  function checkStockAvailability(productId, quantity) {
-    const product = products.value.find((p) => p.id === productId);
-    if (!product) return false;
-    return (product.stock || 0) >= quantity;
-  }
-
-  function getProductStock(productId) {
-    const product = products.value.find((p) => p.id === productId);
-    return product ? (product.stock || 0) : 0;
-  }
-
-  function resetToDefaults() {
-    products.value = [...DEFAULT_PRODUCTS];
-    saveProductsToStorage();
-    return { ok: true, message: "Product catalog reset to defaults." };
-  }
-
-  return {
-    products,
-    categories,
-    totalProducts,
-    lowStockAlerts,
-    outOfStockProducts,
-    addProduct,
-    updateProduct,
-    deleteProduct,
-    resetToDefaults,
-    decrementStock,
-    incrementStock,
-    checkStockAvailability,
-    getProductStock,
-    getProductByBarcode,
-  };
+  return { products, categories, totalProducts, lowStockAlerts, outOfStockProducts, addProduct, updateProduct, deleteProduct, clearCatalog, getProductByBarcode, checkStockAvailability, getProductStock };
 });

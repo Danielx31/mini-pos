@@ -1,0 +1,24 @@
+{
+  "name": "mini-pos-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=../.env.local src/app.js",
+    "create-user": "node --env-file-if-exists=../.env.local src/create-user.js",
+    "manage-user": "node --env-file-if-exists=../.env.local src/manage-user.js",
+    "import-sqlite": "node --env-file-if-exists=../.env.local src/import-sqlite.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.1",
+    "express": "^5.1.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
+  }
+}

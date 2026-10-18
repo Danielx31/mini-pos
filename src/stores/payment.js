@@ -25,6 +25,8 @@ export const usePaymentStore = defineStore("payment", () => {
     const numAmount = Number(amount);
     if (Number.isFinite(numAmount) && numAmount >= 0) {
       cashTendered.value = numAmount;
+    } else {
+      cashTendered.value = 0;
     }
   }
 

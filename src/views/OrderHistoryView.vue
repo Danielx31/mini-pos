@@ -53,16 +53,17 @@ function handlePrint() {
   printReceipt(selectedOrderForReceipt.value.orderNumber);
 }
 
-function confirmClearHistory() {
-  const confirmed = window.confirm("Are you sure you want to delete all order history? This cannot be undone.");
+async function confirmClearHistory() {
+  const confirmed = window.confirm("Archive all visible order history? Records remain stored on the server for managers and administrators.");
   if (!confirmed) return;
-  ordersStore.clearHistory();
+  const result = await ordersStore.clearHistory();
+  if (!result.ok) alert(result.message);
 }
 
-function confirmRefund(order) {
+async function confirmRefund(order) {
   const confirmed = window.confirm(`Are you sure you want to refund order ${order.orderNumber}? This will restore inventory and cannot be undone.`);
   if (!confirmed) return;
-  const result = ordersStore.refundOrder(order.orderNumber);
+  const result = await ordersStore.refundOrder(order.orderNumber);
   if (result.ok) {
     alert(result.message);
   } else {
@@ -210,7 +211,7 @@ function confirmRefund(order) {
             <!-- Receipt Actions -->
             <div class="mt-4 border-t border-slate-200 pt-4 flex gap-2 justify-end">
               <button
-                v-if="!order.refunded"
+                v-if="authStore.canManage && !order.refunded"
                 @click="confirmRefund(order)"
                 class="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 transition"
               >
@@ -260,7 +261,7 @@ function confirmRefund(order) {
       </div>
 
       <div v-if="ordersStore.orders.length > 0" class="mt-6 flex justify-end">
-        <button v-if="authStore.isAdmin" class="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition" @click="confirmClearHistory">Clear All History</button>
+        <button v-if="authStore.canManage" class="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition" @click="confirmClearHistory">Archive History</button>
       </div>
     </main>
 

@@ -73,11 +73,12 @@ function checkoutSale() {
     return;
   }
   
+  checkoutNotice.value = null;
   paymentStore.openPaymentModal();
 }
 
-function holdCurrentOrder() {
-  const result = posStore.parkCurrentOrder({
+async function holdCurrentOrder() {
+  const result = await posStore.parkCurrentOrder({
     customerLabel: parkedCustomerLabel.value,
     note: parkedOrderNote.value,
   });
@@ -90,12 +91,12 @@ function holdCurrentOrder() {
   checkoutNotice.value = result;
 }
 
-function recallParkedOrder(holdNumber) {
-  const result = posStore.recallParkedOrder(holdNumber);
+async function recallParkedOrder(holdNumber) {
+  const result = await posStore.recallParkedOrder(holdNumber);
   checkoutNotice.value = result;
 }
 
-function removeParkedOrder(holdNumber) {
+async function removeParkedOrder(holdNumber) {
   const confirmed = window.confirm(
     `Remove parked order ${holdNumber}? This action cannot be undone.`,
   );
@@ -104,15 +105,16 @@ function removeParkedOrder(holdNumber) {
     return;
   }
 
-  const result = posStore.removeParkedOrder(holdNumber);
+  const result = await posStore.removeParkedOrder(holdNumber);
   checkoutNotice.value = result;
 }
 
-function handlePaymentConfirm() {
-  paymentStore.closePaymentModal();
-  const result = posStore.completeCheckout();
+async function handlePaymentConfirm() {
+  checkoutNotice.value = null;
+  const result = await posStore.completeCheckout();
   
   if (result.ok && result.order) {
+    paymentStore.closePaymentModal();
     // Show receipt modal instead of notice
     selectedOrder.value = result.order;
     isReceiptModalOpen.value = true;
@@ -251,7 +253,7 @@ function handlePrint() {
             </article>
           </div>
 
-          <p v-if="posStore.filteredProducts.length === 0" class="mt-6 rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">No products matched your search. Try another keyword or clear the filter.</p>
+          <p v-if="posStore.filteredProducts.length === 0" class="mt-6 rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">{{ posStore.products.length === 0 ? 'No products yet. An admin or manager can add products from the Products page.' : 'No products matched your search. Try another keyword or clear the filter.' }}</p>
         </section>
 
         <aside class="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -400,17 +402,18 @@ function handlePrint() {
     <PaymentModal
       v-if="paymentStore.isPaymentModalOpen"
       :total-amount="posStore.grandTotal"
+      :error-message="checkoutNotice?.ok === false ? checkoutNotice.message : ''"
       @confirm="handlePaymentConfirm"
       @cancel="handlePaymentCancel"
     />
 
-    <!-- Receipt Modal (shown after successful payment) -->
+    <!-- Receipt Modal (shown after recording a sale) -->
     <div v-if="isReceiptModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div class="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-auto">
         <!-- Modal Header -->
         <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
           <div>
-            <h2 class="text-lg font-semibold text-slate-900">✓ Payment Successful</h2>
+            <h2 class="text-lg font-semibold text-slate-900">Sale Recorded</h2>
             <p class="mt-1 text-sm text-slate-500">Receipt - {{ selectedOrder?.orderNumber }}</p>
           </div>
           <button

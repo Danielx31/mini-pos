@@ -6,10 +6,7 @@ import { useCouponsStore } from "./coupons";
 import { usePaymentStore } from "./payment";
 import { useTaxStore } from "./taxes";
 import { DEFAULT_TAX_RATE, formatTaxRate } from "../constants/taxes";
-
-const PARKED_ORDERS_STORAGE_KEY = "mini_pos_parked_orders";
-const HOLD_LABEL_MAX_LENGTH = 60;
-const HOLD_NOTE_MAX_LENGTH = 140;
+import { api } from "../lib/api";
 
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");
@@ -17,7 +14,9 @@ export const usePosStore = defineStore("pos", () => {
   const appliedCoupon = ref(null);
   const couponCode = ref("");
   const couponError = ref("");
-  const parkedOrders = ref(loadParkedOrdersFromStorage());
+  const parkedOrders = ref([]);
+  const checkoutKey = ref(crypto.randomUUID());
+  const isCompletingCheckout = ref(false);
 
   const productsStore = useProductsStore();
   const couponsStore = useCouponsStore();
@@ -94,30 +93,6 @@ export const usePosStore = defineStore("pos", () => {
 
   const totalParkedOrders = computed(() => parkedOrders.value.length);
 
-  function loadParkedOrdersFromStorage() {
-    try {
-      const stored = localStorage.getItem(PARKED_ORDERS_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveParkedOrdersToStorage() {
-    localStorage.setItem(
-      PARKED_ORDERS_STORAGE_KEY,
-      JSON.stringify(parkedOrders.value),
-    );
-  }
-
-  function generateHoldNumber() {
-    return `HOLD-${Date.now()}`;
-  }
-
-  function sanitizeHoldText(value, maxLength) {
-    return String(value || "").trim().slice(0, maxLength);
-  }
-
   function addToCart(product) {
     // Check if product is in stock
     if (!productsStore.checkStockAvailability(product.id, 1)) {
@@ -170,14 +145,14 @@ export const usePosStore = defineStore("pos", () => {
     const nextQuantity = Number(quantity);
 
     if (!Number.isFinite(nextQuantity)) {
-      return;
+      return { ok: false, message: "Invalid quantity." };
     }
 
     if (nextQuantity <= 0) {
       cartItems.value = cartItems.value.filter(
         (item) => item.productId !== productId,
       );
-      return;
+      return { ok: true };
     }
 
     // Check stock availability
@@ -190,10 +165,11 @@ export const usePosStore = defineStore("pos", () => {
     );
 
     if (!cartItem) {
-      return;
+      return { ok: false, message: "Product not found in cart." };
     }
 
     cartItem.quantity = Math.min(99, Math.floor(nextQuantity));
+    return { ok: true };
   }
 
   function removeFromCart(productId) {
@@ -204,6 +180,7 @@ export const usePosStore = defineStore("pos", () => {
 
   function clearCart() {
     cartItems.value = [];
+    checkoutKey.value = crypto.randomUUID();
     removeCoupon();
   }
 
@@ -244,7 +221,7 @@ export const usePosStore = defineStore("pos", () => {
     };
   }
 
-  function parkCurrentOrder(options = {}) {
+  async function parkCurrentOrder(options = {}) {
     if (cartItems.value.length === 0) {
       return {
         ok: false,
@@ -252,39 +229,21 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
-    const customerLabel = sanitizeHoldText(
-      options.customerLabel,
-      HOLD_LABEL_MAX_LENGTH,
-    );
-    const note = sanitizeHoldText(options.note, HOLD_NOTE_MAX_LENGTH);
-
-    const parkedOrder = {
-      holdNumber: generateHoldNumber(),
-      parkedAt: new Date().toISOString(),
-      itemCount: totalItems.value,
-      subtotal: subtotal.value,
-      discount: discountAmount.value,
-      tax: taxAmount.value,
-      total: grandTotal.value,
-      coupon: appliedCoupon.value ? { ...appliedCoupon.value } : null,
-      customerLabel,
-      note,
-      items: cartItems.value.map((item) => ({ ...item })),
-    };
-
-    parkedOrders.value.unshift(parkedOrder);
-    saveParkedOrdersToStorage();
-
-    clearCart();
-    usePaymentStore().resetPayment();
-
-    return {
-      ok: true,
-      message: `Order parked as ${parkedOrder.holdNumber}.`,
-    };
+    try {
+      const result = await api("/holds", { method: "POST", body: {
+        items: cartItems.value.map(({ productId, quantity }) => ({ productId, quantity })),
+        couponCode: appliedCoupon.value?.code,
+        customerLabel: options.customerLabel,
+        note: options.note,
+      } });
+      parkedOrders.value = result.parkedOrders;
+      clearCart();
+      usePaymentStore().resetPayment();
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
   }
 
-  function recallParkedOrder(holdNumber) {
+  async function recallParkedOrder(holdNumber) {
     if (cartItems.value.length > 0) {
       return {
         ok: false,
@@ -292,56 +251,28 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
-    const orderIndex = parkedOrders.value.findIndex(
-      (order) => order.holdNumber === holdNumber,
-    );
-
-    if (orderIndex === -1) {
-      return {
-        ok: false,
-        message: "Parked order not found.",
-      };
-    }
-
-    const parkedOrder = parkedOrders.value[orderIndex];
-
-    cartItems.value = parkedOrder.items.map((item) => ({ ...item }));
-    appliedCoupon.value = parkedOrder.coupon ? { ...parkedOrder.coupon } : null;
-    couponCode.value = "";
-    couponError.value = "";
-
-    parkedOrders.value.splice(orderIndex, 1);
-    saveParkedOrdersToStorage();
-
-    return {
-      ok: true,
-      message: `Recalled ${holdNumber} into the current cart.`,
-    };
+    try {
+      const result = await api(`/holds/${encodeURIComponent(holdNumber)}/recall`, { method: "POST" });
+      cartItems.value = result.hold.items.map((item) => ({ ...item }));
+      appliedCoupon.value = result.hold.coupon;
+      couponCode.value = "";
+      couponError.value = "";
+      parkedOrders.value = result.parkedOrders;
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
   }
 
-  function removeParkedOrder(holdNumber) {
-    const orderIndex = parkedOrders.value.findIndex(
-      (order) => order.holdNumber === holdNumber,
-    );
-
-    if (orderIndex === -1) {
-      return {
-        ok: false,
-        message: "Parked order not found.",
-      };
-    }
-
-    parkedOrders.value.splice(orderIndex, 1);
-    saveParkedOrdersToStorage();
-
-    return {
-      ok: true,
-      message: `Removed parked order ${holdNumber}.`,
-    };
+  async function removeParkedOrder(holdNumber) {
+    try {
+      const result = await api(`/holds/${encodeURIComponent(holdNumber)}`, { method: "DELETE" });
+      parkedOrders.value = result.parkedOrders;
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
   }
 
-  function completeCheckout() {
+  async function completeCheckout() {
     const paymentStore = usePaymentStore();
+    if (isCompletingCheckout.value) return { ok: false, message: "Checkout is already in progress." };
 
     if (cartItems.value.length === 0) {
       return {
@@ -350,53 +281,23 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
-    const orderNumber = `ORD-${Date.now()}`;
-    const checkedOutItems = cartItems.value.map((item) => ({ ...item }));
-    const discount = discountAmount.value;
-    const couponSnapshot = appliedCoupon.value
-      ? { ...appliedCoupon.value }
-      : null;
-
-    const paymentSnapshot = paymentStore.getPaymentSnapshot(grandTotal.value);
-
-    const orderSummary = {
-      orderNumber,
-      itemCount: totalItems.value,
-      subtotal: subtotal.value,
-      discount,
-      coupon: couponSnapshot,
-      tax: taxAmount.value,
-      taxRateSummary: taxRateSummary.value,
-      total: grandTotal.value,
-      payment: paymentSnapshot,
-      checkedOutAt: new Date().toISOString(),
-      items: checkedOutItems,
-    };
-
-    if (couponSnapshot) {
-      couponsStore.recordUsage(couponSnapshot.id);
-    }
-
-    // Decrement stock for each item in the order
-    for (const item of checkedOutItems) {
-      const result = productsStore.decrementStock(item.productId, item.quantity);
-      if (!result.ok) {
-        // This shouldn't happen since we validate stock before checkout, but just in case
-        console.error("Stock decrement failed:", result.message);
-      }
-    }
-
-    clearCart();
-    paymentStore.resetPayment();
-
-    const ordersStore = useOrdersStore();
-    ordersStore.addOrder(orderSummary);
-
-    return {
-      ok: true,
-      message: `Payment captured for ${orderNumber}.`,
-      order: orderSummary,
-    };
+    isCompletingCheckout.value = true;
+    try {
+      const result = await api("/orders", { method: "POST", body: {
+        checkoutKey: checkoutKey.value,
+        items: cartItems.value.map(({ productId, quantity }) => ({ productId, quantity })),
+        couponCode: appliedCoupon.value?.code,
+        paymentMethod: paymentStore.paymentMethod,
+        cashTendered: paymentStore.cashTendered,
+      } });
+      productsStore.products = result.products;
+      couponsStore.coupons = result.coupons;
+      useOrdersStore().addOrder(result.order);
+      clearCart();
+      paymentStore.resetPayment();
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
+    finally { isCompletingCheckout.value = false; }
   }
 
   return {

@@ -1,0 +1,384 @@
+import express from "express";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { openDatabase, initializeDatabase, productDto, couponDto } from "./db.js";
+import { hashPassword, verifyPassword, randomToken, hashToken, cookieValue, clearCookie, SESSION_SECONDS } from "./security.js";
+
+const DEFAULT_TAX_RATE = 0.08;
+const CATEGORY_TAX_RATES = { Food: 0.05, Drinks: 0.08, Sides: 0.08, Snacks: 0.1 };
+const MAX_ITEMS = 100;
+const MAX_QUANTITY = 99;
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60_000;
+const MANAGEMENT_ROLES = ["admin", "manager"];
+const ACCOUNT_ROLES = [...MANAGEMENT_ROLES, "cashier"];
+
+class ApiError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
+function requireValid(condition, message) {
+  if (!condition) throw new ApiError(400, message);
+}
+
+function text(value, maxLength, label) {
+  requireValid(typeof value === "string" && value.trim().length > 0 && value.trim().length <= maxLength, `${label} is required and must be at most ${maxLength} characters.`);
+  return value.trim();
+}
+
+function optionalText(value, maxLength) {
+  requireValid(value === undefined || value === null || typeof value === "string", "Invalid text value.");
+  const result = (value ?? "").trim();
+  requireValid(result.length <= maxLength, `Text must be at most ${maxLength} characters.`);
+  return result;
+}
+
+function wholeNumber(value, label) {
+  const parsed = Number(value);
+  requireValid((typeof value === "number" || typeof value === "string") && value !== "" && Number.isSafeInteger(parsed) && parsed >= 0, `${label} must be a non-negative whole number.`);
+  return parsed;
+}
+
+function cents(value, label) {
+  const parsed = Number(value);
+  requireValid((typeof value === "number" || typeof value === "string") && value !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 1_000_000 && Math.abs(Math.round(parsed * 100) - parsed * 100) < 1e-8, `${label} must be a valid amount with at most two decimal places.`);
+  return Math.round(parsed * 100);
+}
+
+async function readProducts(db) {
+  return (await db.prepare("SELECT * FROM products ORDER BY name").all()).map(productDto);
+}
+
+async function readCoupons(db) {
+  return (await db.prepare("SELECT * FROM coupons ORDER BY id").all()).map(couponDto);
+}
+
+async function readTaxRates(db) {
+  return Object.fromEntries((await db.prepare("SELECT category, rate FROM tax_rates").all()).map(({ category, rate }) => [category, rate]));
+}
+
+async function readOrders(db) {
+  return (await db.prepare("SELECT * FROM orders WHERE archived=0 ORDER BY created_at DESC").all()).map((row) => ({ ...JSON.parse(row.payload_json), refunded: Boolean(row.refunded), refundedAt: row.refunded_at }));
+}
+
+async function readHolds(db) {
+  return (await db.prepare("SELECT payload_json FROM holds ORDER BY created_at DESC").all()).map((row) => JSON.parse(row.payload_json));
+}
+
+async function couponForCode(db, code, subtotalCents) {
+  if (!code) return null;
+  const coupon = await db.prepare("SELECT * FROM coupons WHERE code = ? COLLATE NOCASE").get(code);
+  if (!coupon || !coupon.active || (coupon.expires_at && Date.parse(coupon.expires_at) < Date.now()) ||
+    (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) || subtotalCents < coupon.min_order_cents) {
+    throw new ApiError(409, "Coupon is no longer valid for this order.");
+  }
+  return coupon;
+}
+
+async function quote(db, requestedItems, couponCode) {
+  requireValid(Array.isArray(requestedItems) && requestedItems.length > 0 && requestedItems.length <= MAX_ITEMS, "Add at least one valid item.");
+  const seen = new Set();
+  const items = [];
+  for (const requested of requestedItems) {
+    requireValid(requested && typeof requested.productId === "string" && !seen.has(requested.productId), "Invalid or duplicate product.");
+    seen.add(requested.productId);
+    const quantity = wholeNumber(requested.quantity, "Quantity");
+    requireValid(quantity >= 1 && quantity <= MAX_QUANTITY, "Quantity must be between 1 and 99.");
+    const product = await db.prepare("SELECT * FROM products WHERE id = ?").get(requested.productId);
+    if (!product) throw new ApiError(409, `Product ${requested.productId} is no longer available.`);
+    if (product.stock < quantity) throw new ApiError(409, `Only ${product.stock} of ${product.name} available.`);
+    items.push({ productId: product.id, name: product.name, category: product.category, price: product.price_cents / 100, quantity, lineCents: product.price_cents * quantity });
+  }
+  const subtotalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
+  const coupon = await couponForCode(db, couponCode, subtotalCents);
+  const discountCents = coupon ? Math.min(subtotalCents, coupon.type === "percentage" ? Math.round(subtotalCents * coupon.value / 100) : coupon.value) : 0;
+  const taxOverrides = await readTaxRates(db);
+  let allocatedDiscount = 0;
+  let taxCents = 0;
+  const rates = new Set();
+  items.forEach((item, index) => {
+    const lineDiscount = subtotalCents === 0 ? 0 : index === items.length - 1 ? discountCents - allocatedDiscount : Math.round(discountCents * item.lineCents / subtotalCents);
+    allocatedDiscount += lineDiscount;
+    const rate = taxOverrides[item.category] ?? CATEGORY_TAX_RATES[item.category] ?? DEFAULT_TAX_RATE;
+    rates.add(rate);
+    taxCents += Math.round((item.lineCents - lineDiscount) * rate);
+    delete item.lineCents;
+  });
+  const summary = {
+    items, itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    subtotal: subtotalCents / 100, discount: discountCents / 100,
+    coupon: coupon ? couponDto(coupon) : null, tax: taxCents / 100,
+    taxRateSummary: rates.size === 1 ? `${Math.round([...rates][0] * 100)}%` : "Variable rates",
+    total: (subtotalCents - discountCents + taxCents) / 100,
+  };
+  return summary;
+}
+
+export function createApp(db, options = {}) {
+  const app = express();
+  const secureCookies = options.secureCookies ?? process.env.NODE_ENV === "production";
+  const publicOrigin = options.publicOrigin ?? process.env.POS_PUBLIC_ORIGIN;
+  app.disable("x-powered-by");
+  if (options.trustProxy) app.set("trust proxy", 1);
+  app.use((req, res, next) => {
+    res.set("X-Content-Type-Options", "nosniff");
+    res.set("Referrer-Policy", "same-origin");
+    res.set("X-Frame-Options", "DENY");
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+  app.use(express.json({ limit: "64kb" }));
+  app.use("/api/v1", async (req, _res, next) => {
+    try {
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+      const expected = publicOrigin ?? `${req.protocol}://${req.get("host")}`;
+      if (req.get("origin") !== expected) return next(new ApiError(403, "Request origin is not allowed."));
+    }
+    const cookie = req.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith("pos_session="));
+    const token = cookie?.slice("pos_session=".length);
+    if (token) {
+      const session = await db.prepare("SELECT sessions.*, users.username, users.display_name, users.role FROM sessions JOIN users ON users.id = sessions.user_id WHERE token_hash = ? AND expires_at > ? AND users.active = 1").get(hashToken(token), Date.now());
+      if (session) req.session = session;
+    }
+    next();
+    } catch (error) { next(error); }
+  });
+
+  function auth(req, _res, next) {
+    if (!req.session) return next(new ApiError(401, "Please sign in."));
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && req.get("x-csrf-token") !== req.session.csrf_token) return next(new ApiError(403, "Invalid request token."));
+    next();
+  }
+  function admin(req, _res, next) {
+    if (req.session.role !== "admin") return next(new ApiError(403, "Administrator access required."));
+    next();
+  }
+  function manager(req, _res, next) {
+    if (!MANAGEMENT_ROLES.includes(req.session.role)) return next(new ApiError(403, "Manager access required."));
+    next();
+  }
+
+  app.post("/api/v1/auth/login", async (req, res, next) => {
+    try {
+      const username = text(req.body?.username, 80, "Username");
+      const password = req.body?.password;
+      requireValid(typeof password === "string" && password.length > 0 && password.length <= 1024, "Password is required and must be at most 1024 characters.");
+      const key = `${req.ip}:${username.toLowerCase()}`;
+      const now = Date.now();
+      const until = now + LOGIN_WINDOW_MS;
+      await db.prepare("DELETE FROM login_attempts WHERE until<?").run(now);
+      const attempt = await db.prepare("INSERT INTO login_attempts (attempt_key,count,until) VALUES (?,1,?) ON CONFLICT(attempt_key) DO UPDATE SET count=CASE WHEN login_attempts.until>? THEN login_attempts.count+1 ELSE 1 END, until=? RETURNING count")
+        .get(key, until, now, until);
+      if (attempt.count > MAX_LOGIN_ATTEMPTS) throw new ApiError(429, "Too many login attempts. Try again later.");
+      const user = await db.prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE AND active = 1").get(username);
+      if (!user || !verifyPassword(password, user.password_hash)) {
+        throw new ApiError(401, "Invalid username or password.");
+      }
+      await db.prepare("DELETE FROM login_attempts WHERE attempt_key=?").run(key);
+      const token = randomToken();
+      const csrfToken = randomToken();
+      await db.prepare("INSERT INTO sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,?)").run(hashToken(token), user.id, csrfToken, Date.now() + SESSION_SECONDS * 1000);
+      res.set("Set-Cookie", cookieValue(token, secureCookies));
+      res.json({ user: { username: user.username, displayName: user.display_name, role: user.role }, csrfToken });
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/auth/me", auth, (req, res) => res.json({ user: { username: req.session.username, displayName: req.session.display_name, role: req.session.role }, csrfToken: req.session.csrf_token }));
+  app.post("/api/v1/auth/logout", auth, async (req, res) => {
+    await db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(req.session.token_hash);
+    res.set("Set-Cookie", clearCookie(secureCookies));
+    res.json({ ok: true });
+  });
+  app.post("/api/v1/users", auth, admin, async (req, res, next) => {
+    try {
+      const username = text(req.body?.username, 80, "Username");
+      const displayName = text(req.body?.displayName, 100, "Display name");
+      const password = req.body?.password;
+      requireValid(/^[a-zA-Z0-9._-]+$/.test(username), "Username may contain only letters, numbers, periods, underscores, and hyphens.");
+      requireValid(typeof password === "string" && password.length >= 12 && password.length <= 1024, "Password must have 12 to 1024 characters.");
+      requireValid(ACCOUNT_ROLES.includes(req.body?.role), "Invalid role.");
+      await db.prepare("INSERT INTO users (id,username,display_name,role,password_hash,created_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), username, displayName, req.body.role, hashPassword(password), new Date().toISOString());
+      res.status(201).json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
+  app.get("/api/v1/products", auth, async (_req, res) => res.json(await readProducts(db)));
+  function productInput(body) {
+    return {
+      name: text(body?.name, 100, "Name"), category: text(body?.category, 80, "Category"),
+      sku: optionalText(body?.sku, 80) || null, priceCents: cents(body?.price, "Price"),
+      stock: wholeNumber(body?.stock, "Stock"), threshold: wholeNumber(body?.lowStockThreshold, "Low stock threshold"),
+    };
+  }
+  app.post("/api/v1/products", auth, manager, async (req, res, next) => {
+    try {
+      const input = productInput(req.body);
+      const id = `p-${randomUUID()}`;
+      await db.prepare("INSERT INTO products (id,sku,name,category,price_cents,stock,low_stock_threshold) VALUES (?,?,?,?,?,?,?)").run(id, input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold);
+      res.status(201).json({ ok: true, message: `\"${input.name}\" added successfully.`, products: await readProducts(db) });
+    } catch (error) { next(error); }
+  });
+  app.put("/api/v1/products/:id", auth, manager, async (req, res, next) => {
+    try {
+      const input = productInput(req.body);
+      const result = await db.prepare("UPDATE products SET sku=?, name=?, category=?, price_cents=?, stock=?, low_stock_threshold=? WHERE id=?").run(input.sku, input.name, input.category, input.priceCents, input.stock, input.threshold, req.params.id);
+      if (!result.changes) throw new ApiError(404, "Product not found.");
+      res.json({ ok: true, message: `\"${input.name}\" updated successfully.`, products: await readProducts(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/products/:id", auth, manager, async (req, res, next) => {
+    try {
+      const result = await db.transaction(async () => {
+        const hasSales = (await db.prepare("SELECT payload_json FROM orders").all()).some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === req.params.id));
+        if (hasSales) throw new ApiError(409, "Products used in recorded sales cannot be deleted. Set stock to zero instead.");
+        const hasHold = (await db.prepare("SELECT payload_json FROM holds").all()).some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === req.params.id));
+        if (hasHold) throw new ApiError(409, "Products in parked orders cannot be deleted. Remove the parked order first.");
+        return db.prepare("DELETE FROM products WHERE id=?").run(req.params.id);
+      });
+      if (!result.changes) throw new ApiError(404, "Product not found.");
+      res.json({ ok: true, message: "Product deleted.", products: await readProducts(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/products", auth, manager, async (_req, res, next) => {
+    try { await db.transaction(async () => {
+      if (await db.prepare("SELECT 1 FROM orders LIMIT 1").get()) throw new ApiError(409, "The catalog cannot be cleared after sales have been recorded.");
+      if (await db.prepare("SELECT 1 FROM holds LIMIT 1").get()) throw new ApiError(409, "Remove parked orders before clearing the catalog.");
+      await db.prepare("DELETE FROM products").run();
+    });
+    res.json({ ok: true, message: "Product catalog cleared.", products: await readProducts(db) });
+    } catch (error) { next(error); }
+  });
+  app.put("/api/v1/tax-rates/:category", auth, manager, async (req, res, next) => {
+    try {
+      const category = text(req.params.category, 80, "Category");
+      const rate = Number(req.body?.rate);
+      requireValid((typeof req.body?.rate === "number" || typeof req.body?.rate === "string") && req.body.rate !== "" && Number.isFinite(rate) && rate >= 0 && rate <= 1, "Tax rate must be between 0 and 1.");
+      await db.prepare("INSERT INTO tax_rates (category,rate) VALUES (?,?) ON CONFLICT(category) DO UPDATE SET rate=excluded.rate").run(category, rate);
+      res.json({ ok: true, message: `Tax rate for ${category} updated.`, taxRates: await readTaxRates(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/tax-rates", auth, manager, async (_req, res) => {
+    await db.prepare("DELETE FROM tax_rates").run();
+    res.json({ ok: true, message: "Category tax rates reset to defaults.", taxRates: {} });
+  });
+
+  app.post("/api/v1/holds", auth, async (req, res, next) => {
+    try {
+      const hold = await db.transaction(async () => {
+        const summary = await quote(db, req.body?.items, req.body?.couponCode);
+        const holdNumber = `HOLD-${randomUUID()}`;
+        const payload = { ...summary, holdNumber, parkedAt: new Date().toISOString(), customerLabel: optionalText(req.body?.customerLabel, 60), note: optionalText(req.body?.note, 140) };
+        await db.prepare("INSERT INTO holds (hold_number,payload_json,created_at,created_by) VALUES (?,?,?,?)").run(holdNumber, JSON.stringify(payload), payload.parkedAt, req.session.user_id);
+        return payload;
+      });
+      res.status(201).json({ ok: true, message: `Order parked as ${hold.holdNumber}.`, hold, parkedOrders: await readHolds(db) });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/v1/holds/:number/recall", auth, async (req, res, next) => {
+    try {
+      const hold = await db.transaction(async () => {
+        const row = await db.prepare("SELECT payload_json FROM holds WHERE hold_number=?").get(req.params.number);
+        if (!row) throw new ApiError(404, "Parked order not found.");
+        const payload = JSON.parse(row.payload_json);
+        const refreshed = await quote(db, payload.items, payload.coupon?.code);
+        await db.prepare("DELETE FROM holds WHERE hold_number=?").run(req.params.number);
+        return { ...payload, ...refreshed };
+      });
+      res.json({ ok: true, message: `Recalled ${hold.holdNumber} into the current cart.`, hold, parkedOrders: await readHolds(db) });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/holds/:number", auth, async (req, res, next) => {
+    try {
+      const result = await db.prepare("DELETE FROM holds WHERE hold_number=?").run(req.params.number);
+      if (!result.changes) throw new ApiError(404, "Parked order not found.");
+      res.json({ ok: true, message: `Removed parked order ${req.params.number}.`, parkedOrders: await readHolds(db) });
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/v1/orders", auth, async (req, res, next) => {
+    try {
+      const order = await db.transaction(async () => {
+        requireValid(typeof req.body?.checkoutKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.checkoutKey), "Invalid checkout request ID.");
+        const previous = await db.prepare("SELECT payload_json FROM orders WHERE checkout_key=?").get(req.body.checkoutKey);
+        if (previous) return JSON.parse(previous.payload_json);
+        const summary = await quote(db, req.body?.items, req.body?.couponCode);
+        const paymentMethod = req.body?.paymentMethod;
+        requireValid(["cash", "card", "e-wallet"].includes(paymentMethod), "Invalid payment method.");
+        const tenderedCents = paymentMethod === "cash" ? cents(req.body?.cashTendered, "Cash tendered") : null;
+        if (paymentMethod === "cash" && tenderedCents < Math.round(summary.total * 100)) throw new ApiError(409, "Cash tendered is less than total.");
+        for (const item of summary.items) {
+          const result = await db.prepare("UPDATE products SET stock=stock-CAST(? AS INTEGER) WHERE id=? AND stock>=CAST(? AS INTEGER)").run(item.quantity, item.productId, item.quantity);
+          if (!result.changes) throw new ApiError(409, `Insufficient stock for ${item.name}.`);
+        }
+        if (summary.coupon) await db.prepare("UPDATE coupons SET used_count=used_count+1 WHERE id=?").run(summary.coupon.id);
+        const payload = {
+          ...summary, orderNumber: `ORD-${randomUUID()}`, checkedOutAt: new Date().toISOString(),
+          payment: { paymentMethod, cashTendered: tenderedCents === null ? null : tenderedCents / 100, change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100 },
+        };
+        await db.prepare("INSERT INTO orders (order_number,payload_json,created_at,created_by,checkout_key) VALUES (?,?,?,?,?)").run(payload.orderNumber, JSON.stringify(payload), payload.checkedOutAt, req.session.user_id, req.body.checkoutKey);
+        return payload;
+      });
+      res.status(201).json({ ok: true, message: `Sale recorded as ${order.orderNumber}.`, order, products: await readProducts(db), coupons: await readCoupons(db) });
+    } catch (error) {
+      if (error.code === "23505" && error.constraint === "orders_checkout_key_key") {
+        try {
+          const previous = await db.prepare("SELECT payload_json FROM orders WHERE checkout_key=?").get(req.body?.checkoutKey);
+          if (previous) {
+            const order = JSON.parse(previous.payload_json);
+            res.status(201).json({ ok: true, message: `Sale recorded as ${order.orderNumber}.`, order, products: await readProducts(db), coupons: await readCoupons(db) });
+            return;
+          }
+        } catch (lookupError) { next(lookupError); return; }
+      }
+      next(error);
+    }
+  });
+  app.post("/api/v1/orders/:number/refund", auth, manager, async (req, res, next) => {
+    try {
+      await db.transaction(async () => {
+        const row = await db.prepare("SELECT * FROM orders WHERE order_number=?").get(req.params.number);
+        if (!row) throw new ApiError(404, "Order not found.");
+        if (row.refunded) throw new ApiError(409, "Order has already been refunded.");
+        const order = JSON.parse(row.payload_json);
+        for (const item of order.items) {
+          const result = await db.prepare("UPDATE products SET stock=stock+CAST(? AS INTEGER) WHERE id=?").run(item.quantity, item.productId);
+          if (!result.changes) throw new ApiError(409, `Cannot restore stock: product ${item.name} no longer exists.`);
+        }
+        await db.prepare("UPDATE orders SET refunded=1, refunded_at=? WHERE order_number=?").run(new Date().toISOString(), req.params.number);
+      });
+      res.json({ ok: true, message: `Order ${req.params.number} has been refunded.`, products: await readProducts(db), orders: await readOrders(db) });
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/orders/archive", auth, manager, async (_req, res) => {
+    const archived = (await db.prepare("SELECT * FROM orders WHERE archived=1 ORDER BY created_at DESC").all()).map((row) => ({ ...JSON.parse(row.payload_json), refunded: Boolean(row.refunded), refundedAt: row.refunded_at }));
+    res.json(archived);
+  });
+  app.delete("/api/v1/orders", auth, manager, async (_req, res) => {
+    await db.prepare("UPDATE orders SET archived=1 WHERE archived=0").run();
+    res.json({ ok: true, orders: [] });
+  });
+
+  const dist = fileURLToPath(new URL("../../dist", import.meta.url));
+  if (options.serveStatic !== false && existsSync(dist)) {
+    app.use(express.static(dist, { index: false }));
+    app.use((req, res, next) => req.method === "GET" && !req.path.startsWith("/api/") ? res.sendFile(resolve(dist, "index.html")) : next());
+  }
+  app.use((error, _req, res, _next) => {
+    if (error instanceof ApiError) return res.status(error.status).json({ ok: false, message: error.message });
+    if (["23505", "23503", "23514"].includes(error.code)) return res.status(409).json({ ok: false, message: "This value already exists or violates a data constraint." });
+    if (error.status === 400) return res.status(400).json({ ok: false, message: "Invalid request body." });
+    if (error.type === "entity.too.large") return res.status(413).json({ ok: false, message: "Request is too large." });
+    console.error(error);
+    res.status(500).json({ ok: false, message: "Server error. Please try again." });
+  });
+  return app;
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const db = openDatabase();
+  await initializeDatabase(db);
+  const port = Number(process.env.PORT ?? 3000);
+  createApp(db).listen(port, () => console.log(`Mini POS server listening on http://localhost:${port}`));
+}

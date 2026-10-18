@@ -13,8 +13,8 @@ defineProps({
   },
 });
 
-function handleLogout() {
-  authStore.logout();
+async function handleLogout() {
+  await authStore.logout();
   router.push({ name: ROUTE_NAMES.LOGIN });
 }
 </script>
@@ -41,7 +41,7 @@ function handleLogout() {
           <span class="text-xs text-slate-400">({{ authStore.userRole }})</span>
         </div>
 
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <button
             v-if="showBack"
             class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
@@ -55,7 +55,7 @@ function handleLogout() {
 
           <template v-if="!showBack">
             <button
-              v-if="authStore.isAdmin"
+              v-if="authStore.canManage"
               class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
               @click="router.push({ name: ROUTE_NAMES.PRODUCTS })"
             >
@@ -66,7 +66,7 @@ function handleLogout() {
             </button>
 
             <button
-              v-if="authStore.isAdmin"
+              v-if="authStore.canManage"
               class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
               @click="router.push({ name: ROUTE_NAMES.ANALYTICS })"
             >
@@ -74,6 +74,14 @@ function handleLogout() {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               Analytics
+            </button>
+
+            <button
+              v-if="authStore.isAdmin"
+              class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:border-blue-400 hover:text-blue-100 transition"
+              @click="router.push({ name: ROUTE_NAMES.USERS })"
+            >
+              Accounts
             </button>
 
             <button

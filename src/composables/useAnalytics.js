@@ -5,7 +5,10 @@ import { computed } from "vue";
  * Provides methods to calculate revenue, top products, and peak hours
  */
 export const useAnalytics = (orders) => {
-  const source = computed(() => (Array.isArray(orders) ? orders : orders.value ?? []));
+  const source = computed(() => {
+    const current = typeof orders === "function" ? orders() : Array.isArray(orders) ? orders : orders.value ?? [];
+    return current.filter((order) => !order.refunded);
+  });
 
   // Daily revenue data
   const dailyRevenue = computed(() => {
@@ -27,7 +30,7 @@ export const useAnalytics = (orders) => {
   const weeklyRevenue = computed(() => {
     const byWeek = {};
 
-    orders.forEach((order) => {
+    source.value.forEach((order) => {
       const date = new Date(order.checkedOutAt);
       const weekStart = new Date(date);
       weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
@@ -47,7 +50,7 @@ export const useAnalytics = (orders) => {
   const monthlyRevenue = computed(() => {
     const byMonth = {};
 
-    orders.forEach((order) => {
+    source.value.forEach((order) => {
       const month = order.checkedOutAt.substring(0, 7); // YYYY-MM
       if (!byMonth[month]) {
         byMonth[month] = { month, revenue: 0, count: 0 };
@@ -63,7 +66,7 @@ export const useAnalytics = (orders) => {
   const topSellingProducts = computed(() => {
     const productSales = {};
 
-    orders.forEach((order) => {
+    source.value.forEach((order) => {
       order.items.forEach((item) => {
         if (!productSales[item.name]) {
           productSales[item.name] = {

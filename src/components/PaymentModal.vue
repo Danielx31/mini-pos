@@ -8,6 +8,10 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  errorMessage: {
+    type: String,
+    default: "",
+  },
 });
 
 const emit = defineEmits(["confirm", "cancel"]);
@@ -59,7 +63,7 @@ function cancelPayment() {
       <div class="mb-6">
         <h2 class="text-2xl font-bold text-slate-900">Select Payment Method</h2>
         <p class="mt-1 text-sm text-slate-500">
-          Choose how to process this payment
+          Record the payment method used for this sale
         </p>
       </div>
 
@@ -91,7 +95,7 @@ function cancelPayment() {
           />
           <div class="flex-1">
             <p class="font-semibold text-slate-900">Credit/Debit Card</p>
-            <p class="text-xs text-slate-500">Fast and secure card payment</p>
+            <p class="text-xs text-slate-500">Record a card payment completed externally</p>
           </div>
           <svg
             class="h-5 w-5 text-blue-600"
@@ -161,7 +165,7 @@ function cancelPayment() {
           />
           <div class="flex-1">
             <p class="font-semibold text-slate-900">E-Wallet</p>
-            <p class="text-xs text-slate-500">Mobile wallet or digital payment</p>
+            <p class="text-xs text-slate-500">Record a wallet payment completed externally</p>
           </div>
           <svg
             class="h-5 w-5 text-purple-600"
@@ -241,6 +245,7 @@ function cancelPayment() {
       </transition>
 
       <!-- Action Buttons -->
+      <p v-if="errorMessage" class="mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700" role="alert">{{ errorMessage }}</p>
       <div class="grid gap-3 sm:grid-cols-2">
         <button
           @click="cancelPayment"
@@ -253,7 +258,7 @@ function cancelPayment() {
           :disabled="!isValidPayment"
           class="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Confirm Payment
+          Record Sale
         </button>
       </div>
     </div>

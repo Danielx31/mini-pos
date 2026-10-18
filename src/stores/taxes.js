@@ -1,78 +1,25 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { api } from "../lib/api";
 import { CATEGORY_TAX_RATES, DEFAULT_TAX_RATE } from "../constants/taxes";
 
-const STORAGE_KEY = "mini_pos_category_tax_rates";
-
 export const useTaxStore = defineStore("taxes", () => {
-  const categoryTaxRates = ref(loadTaxRatesFromStorage());
-
-  const effectiveTaxRates = computed(() => ({
-    ...CATEGORY_TAX_RATES,
-    ...categoryTaxRates.value,
-  }));
-
-  function loadTaxRatesFromStorage() {
+  const categoryTaxRates = ref({});
+  const effectiveTaxRates = computed(() => ({ ...CATEGORY_TAX_RATES, ...categoryTaxRates.value }));
+  function getTaxRate(category) { return effectiveTaxRates.value[category] ?? DEFAULT_TAX_RATE; }
+  async function setTaxRate(category, rate) {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        return {};
-      }
-      return JSON.parse(stored);
-    } catch {
-      return {};
-    }
+      const result = await api(`/tax-rates/${encodeURIComponent(category)}`, { method: "PUT", body: { rate } });
+      categoryTaxRates.value = result.taxRates;
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
   }
-
-  function saveTaxRatesToStorage() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(categoryTaxRates.value));
+  async function resetTaxRates() {
+    try {
+      const result = await api("/tax-rates", { method: "DELETE" });
+      categoryTaxRates.value = result.taxRates;
+      return result;
+    } catch (error) { return { ok: false, message: error.message }; }
   }
-
-  function getTaxRate(category) {
-    if (!category) {
-      return DEFAULT_TAX_RATE;
-    }
-
-    return (
-      categoryTaxRates.value[category] ?? CATEGORY_TAX_RATES[category] ?? DEFAULT_TAX_RATE
-    );
-  }
-
-  function setTaxRate(category, rate) {
-    const parsedRate = parseFloat(rate);
-    if (!category || !Number.isFinite(parsedRate) || parsedRate < 0 || parsedRate > 1) {
-      return {
-        ok: false,
-        message: "Enter a valid tax rate between 0 and 1 for the selected category.",
-      };
-    }
-
-    categoryTaxRates.value = {
-      ...categoryTaxRates.value,
-      [category]: parsedRate,
-    };
-    saveTaxRatesToStorage();
-
-    return {
-      ok: true,
-      message: `Tax rate for ${category} updated to ${Math.round(parsedRate * 100)}%.`,
-    };
-  }
-
-  function resetTaxRates() {
-    categoryTaxRates.value = {};
-    saveTaxRatesToStorage();
-    return {
-      ok: true,
-      message: "Category tax rates reset to defaults.",
-    };
-  }
-
-  return {
-    categoryTaxRates,
-    effectiveTaxRates,
-    getTaxRate,
-    setTaxRate,
-    resetTaxRates,
-  };
+  return { categoryTaxRates, effectiveTaxRates, getTaxRate, setTaxRate, resetTaxRates };
 });

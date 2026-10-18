@@ -15,7 +15,7 @@ const {
   topSellingProducts,
   peakHours,
   analytics,
-} = useAnalytics(ordersStore.orders);
+} = useAnalytics(() => ordersStore.orders);
 
 const revenueChartType = ref("daily"); // 'daily', 'weekly', 'monthly'
 

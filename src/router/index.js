@@ -6,6 +6,7 @@ import DashboardView from "../views/DashboardView.vue";
 import OrderHistoryView from "../views/OrderHistoryView.vue";
 import ProductManagementView from "../views/ProductManagementView.vue";
 import AnalyticsView from "../views/AnalyticsView.vue";
+import UserManagementView from "../views/UserManagementView.vue";
 
 const routes = [
   {
@@ -30,13 +31,19 @@ const routes = [
     path: "/products",
     name: ROUTE_NAMES.PRODUCTS,
     component: ProductManagementView,
-    meta: { requiresAuth: true, requiresRole: USER_ROLES.ADMIN },
+    meta: { requiresAuth: true, allowedRoles: [USER_ROLES.ADMIN, USER_ROLES.MANAGER] },
   },
   {
     path: "/analytics",
     name: ROUTE_NAMES.ANALYTICS,
     component: AnalyticsView,
-    meta: { requiresAuth: true, requiresRole: USER_ROLES.ADMIN },
+    meta: { requiresAuth: true, allowedRoles: [USER_ROLES.ADMIN, USER_ROLES.MANAGER] },
+  },
+  {
+    path: "/users",
+    name: ROUTE_NAMES.USERS,
+    component: UserManagementView,
+    meta: { requiresAuth: true, allowedRoles: [USER_ROLES.ADMIN] },
   },
 ];
 
@@ -56,8 +63,7 @@ router.beforeEach((to, _from) => {
     return { name: ROUTE_NAMES.POS };
   }
 
-  if (to.meta.requiresRole && authStore.userRole !== to.meta.requiresRole) {
-    // Redirect to POS if user doesn't have required role
+  if (to.meta.allowedRoles && !to.meta.allowedRoles.includes(authStore.userRole)) {
     return { name: ROUTE_NAMES.POS };
   }
 });

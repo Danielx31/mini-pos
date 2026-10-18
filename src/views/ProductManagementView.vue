@@ -75,8 +75,8 @@ function openEditForm(product) {
   showAddForm.value = false;
 }
 
-function submitAdd() {
-  const result = productsStore.addProduct({
+async function submitAdd() {
+  const result = await productsStore.addProduct({
     name: formName.value,
     category: formCategory.value,
     sku: formSku.value,
@@ -88,8 +88,8 @@ function submitAdd() {
   if (result.ok) resetForm();
 }
 
-function submitEdit() {
-  const result = productsStore.updateProduct(editingProductId.value, {
+async function submitEdit() {
+  const result = await productsStore.updateProduct(editingProductId.value, {
     name: formName.value,
     category: formCategory.value,
     sku: formSku.value,
@@ -101,33 +101,33 @@ function submitEdit() {
   if (result.ok) resetForm();
 }
 
-function confirmDelete(product) {
+async function confirmDelete(product) {
   const confirmed = window.confirm(`Are you sure you want to delete "${product.name}"?`);
   if (!confirmed) return;
 
-  const result = productsStore.deleteProduct(product.id);
+  const result = await productsStore.deleteProduct(product.id);
   notice.value = result;
 }
 
-function confirmReset() {
-  const confirmed = window.confirm("Reset the entire catalog to defaults? This cannot be undone.");
+async function confirmClear() {
+  const confirmed = window.confirm("Delete every product in the catalog? This cannot be undone.");
   if (!confirmed) return;
 
-  const result = productsStore.resetToDefaults();
+  const result = await productsStore.clearCatalog();
   notice.value = result;
-  resetForm();
+  if (result.ok) resetForm();
 }
 
-function updateCategoryTax(category) {
-  const result = taxStore.setTaxRate(category, taxRateInputs.value[category]);
+async function updateCategoryTax(category) {
+  const result = await taxStore.setTaxRate(category, taxRateInputs.value[category]);
   taxNotice.value = result;
 }
 
-function resetTaxRates() {
+async function resetTaxRates() {
   const confirmed = window.confirm("Reset category tax rates to default values?");
   if (!confirmed) return;
 
-  const result = taxStore.resetTaxRates();
+  const result = await taxStore.resetTaxRates();
   taxNotice.value = result;
   taxRateInputs.value = productsStore.categories.reduce((acc, category) => {
     acc[category] = taxStore.getTaxRate(category);
@@ -162,7 +162,7 @@ function resetTaxRates() {
           <p class="text-sm font-medium text-slate-500">Quick Actions</p>
           <div class="mt-1 flex flex-wrap gap-2">
             <button class="rounded-2xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 transition-colors" @click="openAddForm">+ Add Product</button>
-            <button class="rounded-2xl border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors" @click="confirmReset">Reset Catalog</button>
+            <button v-if="productsStore.totalProducts > 0" class="rounded-2xl border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors" @click="confirmClear">Clear Catalog</button>
           </div>
         </div>
       </div>
@@ -202,7 +202,7 @@ function resetTaxRates() {
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="text-lg font-semibold text-slate-800">Category Tax Rates</h2>
-            <p class="mt-1 text-sm text-slate-500">Adjust tax rate by product category. Changes persist in local storage.</p>
+            <p class="mt-1 text-sm text-slate-500">Adjust tax rate by product category. Changes are saved in PostgreSQL.</p>
           </div>
           <button class="rounded-2xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition" @click="resetTaxRates">Reset Tax Rates</button>
         </div>
@@ -327,7 +327,7 @@ function resetTaxRates() {
           </tbody>
         </table>
 
-        <div v-if="filteredProducts.length === 0" class="py-8 text-center text-sm text-slate-500">No products found. Try clearing the search or add a new product.</div>
+        <div v-if="filteredProducts.length === 0" class="py-8 text-center text-sm text-slate-500">{{ productsStore.totalProducts === 0 ? 'Your catalog is empty. Add your first product above.' : 'No products found. Try clearing the search.' }}</div>
       </div>
     </main>
   </div>

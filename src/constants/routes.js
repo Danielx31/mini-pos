@@ -4,6 +4,7 @@ export const ROUTE_NAMES = Object.freeze({
   ORDERS: "orders",
   PRODUCTS: "products",
   ANALYTICS: "analytics",
+  USERS: "users",
 });
 
 export const TAX_RATE = 0.08;
