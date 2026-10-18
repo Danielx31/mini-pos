@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { openDatabase, initializeDatabase, productDto, couponDto } from "./db.js";
+import { formatPercentRate, fromCents, lineDiscountCents, parseCents, percentageCents, taxCents as taxCentsForLine } from "../../shared/money.js";
 import { hashPassword, verifyPassword, randomToken, hashToken, cookieValue, clearCookie, SESSION_SECONDS } from "./security.js";
 
 const DEFAULT_TAX_RATE = 0.08;
@@ -36,15 +37,15 @@ function optionalText(value, maxLength) {
 }
 
 function wholeNumber(value, label) {
-  const parsed = Number(value);
-  requireValid((typeof value === "number" || typeof value === "string") && value !== "" && Number.isSafeInteger(parsed) && parsed >= 0, `${label} must be a non-negative whole number.`);
+  const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+  requireValid(Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 2_147_483_647, `${label} must be a non-negative whole number.`);
   return parsed;
 }
 
 function cents(value, label) {
-  const parsed = Number(value);
-  requireValid((typeof value === "number" || typeof value === "string") && value !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 1_000_000 && Math.abs(Math.round(parsed * 100) - parsed * 100) < 1e-8, `${label} must be a valid amount with at most two decimal places.`);
-  return Math.round(parsed * 100);
+  const amountCents = parseCents(value);
+  requireValid(amountCents !== null, `${label} must be a valid amount with at most two decimal places, up to 1,000,000.`);
+  return amountCents;
 }
 
 async function readProducts(db) {
@@ -140,7 +141,7 @@ async function readCreditSales(db) {
       archived: Boolean(row.archived),
       items: order.items.map((item) => ({
         productId: item.productId, name: item.name, quantity: item.quantity,
-        price: item.price, lineTotal: Math.round(item.price * item.quantity * 100) / 100,
+        price: item.price, lineTotal: fromCents(Math.round(item.price * 100) * item.quantity),
       })),
     };
   });
@@ -214,25 +215,28 @@ async function quote(db, requestedItems, couponCode) {
   }
   const subtotalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
   const coupon = await couponForCode(db, couponCode, subtotalCents);
-  const discountCents = coupon ? Math.min(subtotalCents, coupon.type === "percentage" ? Math.round(subtotalCents * coupon.value / 100) : coupon.value) : 0;
+  const discountCents = coupon ? Math.min(subtotalCents, coupon.type === "percentage" ? percentageCents(subtotalCents, coupon.value) : coupon.value) : 0;
   const taxOverrides = await readTaxRates(db);
   let allocatedDiscount = 0;
+  let cumulativeLineCents = 0;
   let taxCents = 0;
   const rates = new Set();
-  items.forEach((item, index) => {
-    const lineDiscount = subtotalCents === 0 ? 0 : index === items.length - 1 ? discountCents - allocatedDiscount : Math.round(discountCents * item.lineCents / subtotalCents);
+  items.forEach((item) => {
+    cumulativeLineCents += item.lineCents;
+    const lineDiscount = lineDiscountCents(discountCents, subtotalCents, cumulativeLineCents, allocatedDiscount);
     allocatedDiscount += lineDiscount;
     const rate = taxOverrides[item.category] ?? CATEGORY_TAX_RATES[item.category] ?? DEFAULT_TAX_RATE;
     rates.add(rate);
-    taxCents += Math.round((item.lineCents - lineDiscount) * rate);
+    taxCents += taxCentsForLine(item.lineCents - lineDiscount, rate);
     delete item.lineCents;
   });
   const summary = {
     items, itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    subtotal: subtotalCents / 100, discount: discountCents / 100,
-    coupon: coupon ? couponDto(coupon) : null, tax: taxCents / 100,
-    taxRateSummary: rates.size === 1 ? `${Math.round([...rates][0] * 100)}%` : "Variable rates",
-    total: (subtotalCents - discountCents + taxCents) / 100,
+    subtotal: fromCents(subtotalCents), discount: fromCents(discountCents),
+    coupon: coupon ? couponDto(coupon) : null, tax: fromCents(taxCents),
+    taxRateSummary: rates.size === 1 ? formatPercentRate([...rates][0]) : "Variable rates",
+    total: fromCents(subtotalCents - discountCents + taxCents),
+    totalCents: subtotalCents - discountCents + taxCents,
   };
   return summary;
 }
@@ -465,7 +469,7 @@ export function createApp(db, options = {}) {
     try {
       const category = text(req.params.category, 80, "Category");
       const rate = Number(req.body?.rate);
-      requireValid((typeof req.body?.rate === "number" || typeof req.body?.rate === "string") && req.body.rate !== "" && Number.isFinite(rate) && rate >= 0 && rate <= 1, "Tax rate must be between 0 and 1.");
+      requireValid((typeof req.body?.rate === "number" || typeof req.body?.rate === "string") && req.body.rate !== "" && Number.isFinite(rate) && rate >= 0 && rate <= 1 && Math.abs(rate * 10_000 - Math.round(rate * 10_000)) < 1e-8, "Tax rate must be between 0 and 1 with at most four decimal places.");
       await db.prepare("INSERT INTO tax_rates (category,rate) VALUES (?,?) ON CONFLICT(category) DO UPDATE SET rate=excluded.rate").run(category, rate);
       res.json({ ok: true, message: `Tax rate for ${category} updated.`, taxRates: await readTaxRates(db) });
     } catch (error) { next(error); }
@@ -541,12 +545,12 @@ export function createApp(db, options = {}) {
         const paymentMethod = req.body?.paymentMethod;
         requireValid(["cash", "card", "e-wallet", "credit"].includes(paymentMethod), "Invalid payment method.");
         const tenderedCents = paymentMethod === "cash" ? cents(req.body?.cashTendered, "Cash tendered") : null;
-        if (paymentMethod === "cash" && tenderedCents < Math.round(summary.total * 100)) throw new ApiError(409, "Cash tendered is less than total.");
+        if (paymentMethod === "cash" && tenderedCents < summary.totalCents) throw new ApiError(409, "Cash tendered is less than total.");
         const customerName = paymentMethod === "credit" ? text(req.body?.customerName, 100, "Customer name") : null;
         const customerContact = paymentMethod === "credit" ? optionalText(req.body?.customerContact, 100) || null : null;
         const dueDate = paymentMethod === "credit" ? optionalText(req.body?.dueDate, 10) || null : null;
         if (dueDate) requireValid(/^\d{4}-\d{2}-\d{2}$/.test(dueDate) && !Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)) && new Date(`${dueDate}T00:00:00Z`).toISOString().slice(0, 10) === dueDate, "Due date must be a valid date.");
-        const totalCents = Math.round(summary.total * 100);
+        const totalCents = summary.totalCents;
         if (paymentMethod === "credit") requireValid(totalCents > 0, "Utang requires an amount due greater than zero.");
         for (const item of summary.items) {
           const result = await db.prepare("UPDATE products SET stock=stock-CAST(? AS INTEGER) WHERE id=? AND stock>=CAST(? AS INTEGER)").run(item.quantity, item.productId, item.quantity);
@@ -559,7 +563,7 @@ export function createApp(db, options = {}) {
             paymentMethod,
             verificationStatus: paymentMethod === "credit" ? "unpaid" : paymentMethod === "cash" ? "cash_recorded" : "not_verified",
             cashTendered: tenderedCents === null ? null : tenderedCents / 100,
-            change: tenderedCents === null ? null : (tenderedCents - Math.round(summary.total * 100)) / 100,
+            change: tenderedCents === null ? null : fromCents(tenderedCents - totalCents),
           },
         };
         await db.prepare("INSERT INTO orders (order_number,payload_json,created_at,created_by,checkout_key) VALUES (?,?,?,?,?)").run(payload.orderNumber, JSON.stringify(payload), payload.checkedOutAt, req.session.user_id, req.body.checkoutKey);

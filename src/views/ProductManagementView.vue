@@ -4,6 +4,7 @@ import { useProductsStore } from "../stores/products";
 import { useAuthStore } from "../stores/auth";
 import { useTaxStore } from "../stores/taxes";
 import { useCurrency } from "../composables/useFormatters";
+import { formatTaxRate } from "../constants/taxes";
 import AppNavbar from "../components/AppNavbar.vue";
 
 const productsStore = useProductsStore();
@@ -281,7 +282,7 @@ async function resetTaxRates() {
                 <p class="text-sm font-semibold text-slate-800">{{ category }}</p>
                 <p class="text-xs text-slate-500">Current category rate</p>
               </div>
-              <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{{ Math.round((taxStore.getTaxRate(category) ?? 0) * 100) }}%</span>
+              <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{{ formatTaxRate(taxStore.getTaxRate(category)) }}</span>
             </div>
             <div class="space-y-3">
               <label class="text-xs font-medium text-slate-700">Set rate</label>
@@ -319,15 +320,15 @@ async function resetTaxRates() {
           </div>
           <div>
             <label for="productPrice" class="mb-1 block text-sm font-medium text-slate-700">Price (₱)</label>
-            <input id="productPrice" v-model="formPrice" type="number" step="0.01" min="0" placeholder="0.00" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="productPrice" v-model="formPrice" type="number" step="0.01" min="0" required placeholder="0.00" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
           <div>
             <label for="productStock" class="mb-1 block text-sm font-medium text-slate-700">Stock</label>
-            <input id="productStock" v-model="formStock" type="number" min="0" placeholder="0" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="productStock" v-model="formStock" type="number" min="0" step="1" required placeholder="0" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
           <div>
             <label for="productThreshold" class="mb-1 block text-sm font-medium text-slate-700">Low Stock Alert</label>
-            <input id="productThreshold" v-model="formLowStockThreshold" type="number" min="0" placeholder="0" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="productThreshold" v-model="formLowStockThreshold" type="number" min="0" step="1" required placeholder="0" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
           </div>
           <div class="flex items-end gap-2 sm:col-span-5">
             <button type="submit" class="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 transition-colors">{{ editingProductId ? 'Save Changes' : 'Add Product' }}</button>

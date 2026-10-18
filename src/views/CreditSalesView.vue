@@ -6,6 +6,7 @@ import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { ROUTE_NAMES } from "../constants/routes";
 import { api } from "../lib/api";
 import { useOrdersStore } from "../stores/orders";
+import { fromCents, toCents } from "../../shared/money.js";
 
 type CreditItem = { productId: string; name: string; quantity: number; price: number; lineTotal: number };
 type CreditSale = {
@@ -98,9 +99,9 @@ const customerCredits = computed(() => {
     }
     customer.records.push(record);
     if (record.status !== "refunded") {
-      customer.total += record.total;
-      customer.paid += record.paid;
-      customer.balance += record.balance;
+      customer.total = fromCents(toCents(customer.total) + toCents(record.total));
+      customer.paid = fromCents(toCents(customer.paid) + toCents(record.paid));
+      customer.balance = fromCents(toCents(customer.balance) + toCents(record.balance));
     }
   }
   return [...groups.values()].sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
@@ -108,9 +109,9 @@ const customerCredits = computed(() => {
 const visibleCustomerCredits = computed(() => customerCredits.value.filter((customer) => customer.records.some(matchesRecord)));
 
 const activeRecords = computed(() => allRecords.value.filter((record) => record.status !== "refunded"));
-const totalCredit = computed(() => activeRecords.value.reduce((sum, record) => sum + record.total, 0));
-const totalPaid = computed(() => activeRecords.value.reduce((sum, record) => sum + record.paid, 0));
-const totalOutstanding = computed(() => activeRecords.value.reduce((sum, record) => sum + record.balance, 0));
+const totalCredit = computed(() => fromCents(activeRecords.value.reduce((sum, record) => sum + toCents(record.total), 0)));
+const totalPaid = computed(() => fromCents(activeRecords.value.reduce((sum, record) => sum + toCents(record.paid), 0)));
+const totalOutstanding = computed(() => fromCents(activeRecords.value.reduce((sum, record) => sum + toCents(record.balance), 0)));
 const filteredOpeningCredits = computed(() => openingCredits.value.filter(matchesRecord));
 
 function statusLabel(status: CreditSale["status"]) {

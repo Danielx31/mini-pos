@@ -1,3 +1,5 @@
+import { formatPercentRate } from "../../shared/money.js";
+
 export const DEFAULT_TAX_RATE = 0.08;
 
 export const CATEGORY_TAX_RATES = {
@@ -16,5 +18,5 @@ export function getTaxRateForCategory(category) {
 }
 
 export function formatTaxRate(rate) {
-  return `${Math.round((rate ?? DEFAULT_TAX_RATE) * 100)}%`;
+  return formatPercentRate(rate ?? DEFAULT_TAX_RATE);
 }

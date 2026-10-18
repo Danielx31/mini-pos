@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import { api } from "../lib/api";
 import { useAuthStore } from "./auth";
 import { useProductsStore } from "./products";
+import { fromCents, toCents } from "../../shared/money.js";
 
 export const useOrdersStore = defineStore("orders", () => {
   const orders = ref([]);
@@ -14,8 +15,8 @@ export const useOrdersStore = defineStore("orders", () => {
       (!dateFilter.value || order.checkedOutAt.slice(0, 10) === dateFilter.value);
   }));
   const totalOrders = computed(() => orders.value.length);
-  const totalRevenue = computed(() => orders.value.filter((order) => !order.refunded).reduce((sum, order) => sum + order.total, 0));
-  const outstandingCredit = computed(() => orders.value.filter((order) => !order.refunded).reduce((sum, order) => sum + (order.credit?.balance ?? 0), 0));
+  const totalRevenue = computed(() => fromCents(orders.value.filter((order) => !order.refunded).reduce((sum, order) => sum + toCents(order.total), 0)));
+  const outstandingCredit = computed(() => fromCents(orders.value.filter((order) => !order.refunded).reduce((sum, order) => sum + toCents(order.credit?.balance ?? 0), 0)));
   const totalItemsSold = computed(() => orders.value.filter((order) => !order.refunded).reduce((sum, order) => sum + order.itemCount, 0));
 
   function addOrder(order) { orders.value.unshift(order); }

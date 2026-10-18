@@ -1,5 +1,6 @@
 <script setup>
 import { useCurrency, useDateTime } from "../composables/useFormatters";
+import { lineTotal } from "../../shared/money.js";
 
 const props = defineProps({
   order: {
@@ -75,7 +76,7 @@ function getPaymentMethodLabel(method) {
             <td class="text-left text-slate-900 font-medium">{{ item.name }}</td>
             <td class="text-center text-slate-700">{{ item.quantity }}</td>
             <td class="text-right text-slate-700">{{ formatCurrency(item.price) }}</td>
-            <td class="text-right font-semibold text-slate-900">{{ formatCurrency(item.quantity * item.price) }}</td>
+            <td class="text-right font-semibold text-slate-900">{{ formatCurrency(lineTotal(item.price, item.quantity)) }}</td>
           </tr>
         </tbody>
       </table>

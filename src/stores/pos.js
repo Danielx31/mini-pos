@@ -7,6 +7,9 @@ import { usePaymentStore } from "./payment";
 import { useTaxStore } from "./taxes";
 import { DEFAULT_TAX_RATE, formatTaxRate } from "../constants/taxes";
 import { api } from "../lib/api";
+import { fromCents, lineDiscountCents, taxCents as taxCentsForLine, toCents } from "../../shared/money.js";
+
+const MAX_CART_QUANTITY = 99;
 
 export const usePosStore = defineStore("pos", () => {
   const searchTerm = ref("");
@@ -48,35 +51,24 @@ export const usePosStore = defineStore("pos", () => {
     });
   });
 
-  const subtotal = computed(() => {
-    return cartItems.value.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0,
-    );
-  });
-
-  const discountAmount = computed(() =>
-    couponsStore.calculateDiscount(appliedCoupon.value, subtotal.value),
-  );
-  const discountedSubtotal = computed(
-    () => subtotal.value - discountAmount.value,
-  );
-
-  const discountedRatio = computed(() => {
-    if (subtotal.value <= 0) {
-      return 0;
-    }
-    return Math.max(0, discountedSubtotal.value / subtotal.value);
-  });
-
-  const taxAmount = computed(() => {
+  const subtotalCents = computed(() => cartItems.value.reduce((sum, item) => sum + toCents(item.price) * item.quantity, 0));
+  const discountCents = computed(() => couponsStore.calculateDiscountCents(appliedCoupon.value, subtotalCents.value));
+  const taxTotalCents = computed(() => {
+    let allocatedDiscount = 0;
+    let cumulativeLineCents = 0;
     return cartItems.value.reduce((sum, item) => {
-      const itemTotal = item.price * item.quantity * discountedRatio.value;
-      return sum + itemTotal * taxStore.getTaxRate(item.category);
+      const lineCents = toCents(item.price) * item.quantity;
+      cumulativeLineCents += lineCents;
+      const lineDiscount = lineDiscountCents(discountCents.value, subtotalCents.value, cumulativeLineCents, allocatedDiscount);
+      allocatedDiscount += lineDiscount;
+      return sum + taxCentsForLine(lineCents - lineDiscount, taxStore.getTaxRate(item.category));
     }, 0);
   });
-
-  const grandTotal = computed(() => discountedSubtotal.value + taxAmount.value);
+  const subtotal = computed(() => fromCents(subtotalCents.value));
+  const discountAmount = computed(() => fromCents(discountCents.value));
+  const discountedSubtotal = computed(() => fromCents(subtotalCents.value - discountCents.value));
+  const taxAmount = computed(() => fromCents(taxTotalCents.value));
+  const grandTotal = computed(() => fromCents(subtotalCents.value - discountCents.value + taxTotalCents.value));
 
   const taxRateSummary = computed(() => {
     const rates = cartItems.value
@@ -113,6 +105,7 @@ export const usePosStore = defineStore("pos", () => {
     );
 
     if (cartItem) {
+      if (cartItem.quantity >= MAX_CART_QUANTITY) return { ok: false, message: `A sale may contain at most ${MAX_CART_QUANTITY} of each product.` };
       // Check if adding one more would exceed available stock
       if (!productsStore.checkStockAvailability(product.id, cartItem.quantity + 1)) {
         return { ok: false, message: `Cannot add more "${product.name}". Only ${productsStore.getProductStock(product.id)} available.` };
@@ -152,13 +145,13 @@ export const usePosStore = defineStore("pos", () => {
 
   function updateQuantity(productId, quantity) {
     if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before changing the cart." };
-    const nextQuantity = Number(quantity);
+    const nextQuantity = typeof quantity === "string" && /^\d+$/.test(quantity) ? Number(quantity) : quantity;
 
-    if (!Number.isFinite(nextQuantity)) {
-      return { ok: false, message: "Invalid quantity." };
+    if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0 || nextQuantity > MAX_CART_QUANTITY) {
+      return { ok: false, message: `Quantity must be a whole number between 0 and ${MAX_CART_QUANTITY}.` };
     }
 
-    if (nextQuantity <= 0) {
+    if (nextQuantity === 0) {
       cartItems.value = cartItems.value.filter(
         (item) => item.productId !== productId,
       );
@@ -178,7 +171,7 @@ export const usePosStore = defineStore("pos", () => {
       return { ok: false, message: "Product not found in cart." };
     }
 
-    cartItem.quantity = Math.min(99, Math.floor(nextQuantity));
+    cartItem.quantity = nextQuantity;
     return { ok: true };
   }
 

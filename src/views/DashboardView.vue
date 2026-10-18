@@ -5,6 +5,7 @@ import { useCouponsStore } from "../stores/coupons";
 import { usePaymentStore } from "../stores/payment";
 import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { useReceiptPdf } from "../composables/useReceiptPdf";
+import { lineTotal } from "../../shared/money.js";
 import AppNavbar from "../components/AppNavbar.vue";
 import PaymentModal from "../components/PaymentModal.vue";
 import ReceiptView from "../components/ReceiptView.vue";
@@ -305,7 +306,7 @@ function handlePrint() {
                   <span class="min-w-[2.25rem] border-x border-slate-300 px-3 py-2 text-center text-sm font-semibold text-slate-700">{{ item.quantity }}</span>
                   <button class="px-3 py-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50" :disabled="posStore.isHoldPending" @click="increaseQuantity(item)">+</button>
                 </div>
-                <p class="text-sm font-semibold text-slate-900">{{ formatCurrency(item.quantity * item.price) }}</p>
+                <p class="text-sm font-semibold text-slate-900">{{ formatCurrency(lineTotal(item.price, item.quantity)) }}</p>
               </div>
             </div>
 

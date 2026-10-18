@@ -6,6 +6,7 @@ import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { useReceiptPdf } from "../composables/useReceiptPdf";
 import AppNavbar from "../components/AppNavbar.vue";
 import ReceiptView from "../components/ReceiptView.vue";
+import { lineTotal } from "../../shared/money.js";
 
 const ordersStore = useOrdersStore();
 const authStore = useAuthStore();
@@ -203,7 +204,7 @@ async function confirmRefund(order) {
                   <td class="py-2 text-slate-700">{{ item.name }}</td>
                   <td class="py-2 text-center text-slate-600">{{ item.quantity }}</td>
                   <td class="py-2 text-right text-slate-600">{{ formatCurrency(item.price) }}</td>
-                  <td class="py-2 text-right font-medium text-slate-800">{{ formatCurrency(item.quantity * item.price) }}</td>
+                  <td class="py-2 text-right font-medium text-slate-800">{{ formatCurrency(lineTotal(item.price, item.quantity)) }}</td>
                 </tr>
               </tbody>
             </table>

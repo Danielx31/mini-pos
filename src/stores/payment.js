@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
+import { fromCents, parseCents, toCents } from "../../shared/money.js";
 
 export const PAYMENT_METHODS = {
   CASH: "cash",
@@ -26,24 +27,20 @@ export const usePaymentStore = defineStore("payment", () => {
   }
 
   function setCashTendered(amount) {
-    const numAmount = Number(amount);
-    if (Number.isFinite(numAmount) && numAmount >= 0) {
-      cashTendered.value = numAmount;
-    } else {
-      cashTendered.value = 0;
-    }
+    const amountCents = parseCents(amount);
+    cashTendered.value = amountCents === null ? 0 : fromCents(amountCents);
   }
 
   function calculateChange(totalAmount) {
     if (paymentMethod.value === PAYMENT_METHODS.CASH) {
-      return Math.max(0, cashTendered.value - totalAmount);
+      return fromCents(Math.max(0, toCents(cashTendered.value) - toCents(totalAmount)));
     }
     return 0;
   }
 
   function isValidPaymentForAmount(totalAmount) {
     if (paymentMethod.value === PAYMENT_METHODS.CASH) {
-      return cashTendered.value > 0 && cashTendered.value >= totalAmount;
+      return toCents(cashTendered.value) > 0 && toCents(cashTendered.value) >= toCents(totalAmount);
     }
     if (paymentMethod.value === PAYMENT_METHODS.CREDIT) {
       return totalAmount > 0 && customerName.value.trim().length > 0 && customerName.value.trim().length <= 100 && customerContact.value.trim().length <= 100;
