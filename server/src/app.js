@@ -63,7 +63,7 @@ async function readStockDisposals(db) {
 }
 
 async function ensureProductIsNotParked(db, productId) {
-  const parked = (await db.prepare("SELECT payload_json FROM holds").all())
+  const parked = (await db.prepare("SELECT payload_json FROM holds WHERE recalled=0").all())
     .some((row) => JSON.parse(row.payload_json).items.some((item) => item.productId === productId));
   if (parked) throw new ApiError(409, "This product is in a parked order. Remove that parked order before removing the product.");
 }
@@ -185,7 +185,7 @@ async function readOrders(db, archived = 0) {
 }
 
 async function readHolds(db) {
-  return (await db.prepare("SELECT payload_json FROM holds ORDER BY created_at DESC").all()).map((row) => JSON.parse(row.payload_json));
+  return (await db.prepare("SELECT payload_json FROM holds WHERE recalled=0 ORDER BY created_at DESC").all()).map((row) => JSON.parse(row.payload_json));
 }
 
 async function couponForCode(db, code, subtotalCents) {
@@ -453,7 +453,7 @@ export function createApp(db, options = {}) {
   });
   app.delete("/api/v1/products", auth, admin, async (req, res, next) => {
     try { await db.transaction(async () => {
-      if (await db.prepare("SELECT 1 FROM holds LIMIT 1").get()) throw new ApiError(409, "Remove parked orders before clearing the catalog.");
+      if (await db.prepare("SELECT 1 FROM holds WHERE recalled=0 LIMIT 1").get()) throw new ApiError(409, "Remove parked orders before clearing the catalog.");
       await db.prepare("UPDATE products SET active=0, archived_name=name, archived_sku=sku, name='Archived ' || id, sku=NULL WHERE active=1").run();
       await db.prepare("UPDATE product_delete_requests SET status='approved', pending_product_id=NULL, reviewed_by=?, reviewed_at=? WHERE status='pending'")
         .run(req.session.user_id, new Date().toISOString());
@@ -477,32 +477,51 @@ export function createApp(db, options = {}) {
 
   app.post("/api/v1/holds", auth, async (req, res, next) => {
     try {
-      const hold = await db.transaction(async () => {
-        const summary = await quote(db, req.body?.items, req.body?.couponCode);
+      requireValid(typeof req.body?.holdKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.holdKey), "Invalid hold request ID.");
+      const customerLabel = optionalText(req.body?.customerLabel, 60);
+      const note = optionalText(req.body?.note, 140);
+      const couponCode = optionalText(req.body?.couponCode, 80) || null;
+      const requestJson = JSON.stringify({ items: req.body?.items, couponCode, customerLabel, note });
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT payload_json,request_json FROM holds WHERE hold_key=?").get(req.body.holdKey);
+        if (previous) {
+          if (previous.request_json !== requestJson) throw new ApiError(409, "Hold request ID was already used for a different cart.");
+          return { hold: JSON.parse(previous.payload_json), duplicate: true };
+        }
+        const summary = await quote(db, req.body?.items, couponCode);
         const holdNumber = `HOLD-${randomUUID()}`;
-        const payload = { ...summary, holdNumber, parkedAt: new Date().toISOString(), customerLabel: optionalText(req.body?.customerLabel, 60), note: optionalText(req.body?.note, 140) };
-        await db.prepare("INSERT INTO holds (hold_number,payload_json,created_at,created_by) VALUES (?,?,?,?)").run(holdNumber, JSON.stringify(payload), payload.parkedAt, req.session.user_id);
-        return payload;
+        const hold = { ...summary, holdNumber, parkedAt: new Date().toISOString(), customerLabel, note };
+        await db.prepare("INSERT INTO holds (hold_number,payload_json,created_at,created_by,hold_key,request_json) VALUES (?,?,?,?,?,?)")
+          .run(holdNumber, JSON.stringify(hold), hold.parkedAt, req.session.user_id, req.body.holdKey, requestJson);
+        return { hold, duplicate: false };
       });
-      res.status(201).json({ ok: true, message: `Order parked as ${hold.holdNumber}.`, hold, parkedOrders: await readHolds(db) });
+      res.status(result.duplicate ? 200 : 201).json({ ok: true, message: `Order parked as ${result.hold.holdNumber}.`, hold: result.hold, parkedOrders: await readHolds(db) });
     } catch (error) { next(error); }
   });
   app.post("/api/v1/holds/:number/recall", auth, async (req, res, next) => {
     try {
+      requireValid(typeof req.body?.recallKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.recallKey), "Invalid recall request ID.");
       const hold = await db.transaction(async () => {
-        const row = await db.prepare("SELECT payload_json FROM holds WHERE hold_number=?").get(req.params.number);
+        const row = await db.prepare("SELECT payload_json,recalled,recall_key,recalled_payload_json FROM holds WHERE hold_number=?").get(req.params.number);
         if (!row) throw new ApiError(404, "Parked order not found.");
+        if (row.recalled) {
+          if (row.recall_key !== req.body.recallKey) throw new ApiError(409, "This parked order was already recalled.");
+          return JSON.parse(row.recalled_payload_json);
+        }
         const payload = JSON.parse(row.payload_json);
         const refreshed = await quote(db, payload.items, payload.coupon?.code);
-        await db.prepare("DELETE FROM holds WHERE hold_number=?").run(req.params.number);
-        return { ...payload, ...refreshed };
+        const recalled = { ...payload, ...refreshed };
+        const updated = await db.prepare("UPDATE holds SET recalled=1,recall_key=?,recalled_payload_json=? WHERE hold_number=? AND recalled=0")
+          .run(req.body.recallKey, JSON.stringify(recalled), req.params.number);
+        if (!updated.changes) throw new ApiError(409, "This parked order was already recalled.");
+        return recalled;
       });
       res.json({ ok: true, message: `Recalled ${hold.holdNumber} into the current cart.`, hold, parkedOrders: await readHolds(db) });
     } catch (error) { next(error); }
   });
   app.delete("/api/v1/holds/:number", auth, async (req, res, next) => {
     try {
-      const result = await db.prepare("DELETE FROM holds WHERE hold_number=?").run(req.params.number);
+      const result = await db.prepare("DELETE FROM holds WHERE hold_number=? AND recalled=0").run(req.params.number);
       if (!result.changes) throw new ApiError(404, "Parked order not found.");
       res.json({ ok: true, message: `Removed parked order ${req.params.number}.`, parkedOrders: await readHolds(db) });
     } catch (error) { next(error); }

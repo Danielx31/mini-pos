@@ -10,7 +10,7 @@
     "server": "npm --prefix server start",
     "server:dev": "npm --prefix server run dev",
     "test:server": "npm --prefix server test",
-    "test:frontend": "node --test test/refund-reporting.test.js"
+    "test:frontend": "node --test --test-concurrency=1 test/refund-reporting.test.js test/hold-recall.test.js"
   },
   "engines": {
     "node": ">=22.9"

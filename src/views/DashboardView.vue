@@ -219,6 +219,7 @@ function handlePrint() {
                 <input
                   ref="barcodeInputElement"
                   v-model="barcodeInput"
+                  :disabled="posStore.isHoldPending"
                   @keydown.enter.prevent="handleBarcodeSubmit"
                   type="text"
                   aria-label="Scan or type a barcode or SKU"
@@ -229,6 +230,7 @@ function handlePrint() {
                 <button
                   type="button"
                   @click="handleBarcodeSubmit"
+                  :disabled="posStore.isHoldPending"
                   class="absolute right-1 top-1/2 -translate-y-1/2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   Add
@@ -267,7 +269,7 @@ function handlePrint() {
                   'bg-blue-600 hover:bg-blue-500': (product.stock || 0) > 0,
                   'bg-slate-400 cursor-not-allowed': (product.stock || 0) === 0
                 }"
-                :disabled="(product.stock || 0) === 0"
+                :disabled="(product.stock || 0) === 0 || posStore.isHoldPending"
                 @click="addProductToCart(product)"
               >
                 {{ (product.stock || 0) === 0 ? 'Out of Stock' : 'Add to Cart' }}
@@ -294,14 +296,14 @@ function handlePrint() {
                   <p class="text-sm font-semibold text-slate-900">{{ item.name }}</p>
                   <p class="mt-1 text-xs text-slate-500">{{ formatCurrency(item.price) }} each</p>
                 </div>
-                <button class="text-xs font-semibold text-rose-600 hover:text-rose-500" @click="posStore.removeFromCart(item.productId)">Remove</button>
+                <button class="text-xs font-semibold text-rose-600 hover:text-rose-500 disabled:opacity-50" :disabled="posStore.isHoldPending" @click="posStore.removeFromCart(item.productId)">Remove</button>
               </div>
 
               <div class="mt-4 flex items-center justify-between gap-3">
                 <div class="inline-flex items-center rounded-full border border-slate-300 bg-white">
-                  <button class="px-3 py-2 text-slate-600 hover:bg-slate-100" @click="decreaseQuantity(item)">-</button>
+                  <button class="px-3 py-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50" :disabled="posStore.isHoldPending" @click="decreaseQuantity(item)">-</button>
                   <span class="min-w-[2.25rem] border-x border-slate-300 px-3 py-2 text-center text-sm font-semibold text-slate-700">{{ item.quantity }}</span>
-                  <button class="px-3 py-2 text-slate-600 hover:bg-slate-100" @click="increaseQuantity(item)">+</button>
+                  <button class="px-3 py-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50" :disabled="posStore.isHoldPending" @click="increaseQuantity(item)">+</button>
                 </div>
                 <p class="text-sm font-semibold text-slate-900">{{ formatCurrency(item.quantity * item.price) }}</p>
               </div>
@@ -316,6 +318,7 @@ function handlePrint() {
             <div v-if="!posStore.appliedCoupon" class="mt-3 flex gap-2">
               <input
                 v-model="posStore.couponCode"
+                :disabled="posStore.isHoldPending"
                 type="text"
                 placeholder="Enter coupon code"
                 class="flex-1 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -323,6 +326,7 @@ function handlePrint() {
               <button
                 class="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
                 @click="posStore.applyCoupon"
+                :disabled="posStore.isHoldPending"
               >
                 Apply
               </button>
@@ -336,6 +340,7 @@ function handlePrint() {
               <button
                 class="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
                 @click="posStore.removeCoupon"
+                :disabled="posStore.isHoldPending"
               >
                 Remove
               </button>
@@ -354,6 +359,7 @@ function handlePrint() {
             <div class="mt-3 space-y-2">
               <input
                 v-model="parkedCustomerLabel"
+                :disabled="posStore.hasPendingHold"
                 type="text"
                 maxlength="60"
                 placeholder="Customer name or reference"
@@ -361,6 +367,7 @@ function handlePrint() {
               />
               <textarea
                 v-model="parkedOrderNote"
+                :disabled="posStore.hasPendingHold"
                 maxlength="140"
                 rows="2"
                 placeholder="Short note (e.g. waiting for one more item)"
@@ -389,6 +396,7 @@ function handlePrint() {
                     type="button"
                     class="text-xs font-semibold text-rose-600 hover:text-rose-500"
                     @click="removeParkedOrder(parkedOrder.holdNumber)"
+                    :disabled="posStore.isHoldPending"
                   >
                     Remove
                   </button>
@@ -398,8 +406,9 @@ function handlePrint() {
                   type="button"
                   class="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
                   @click="recallParkedOrder(parkedOrder.holdNumber)"
+                  :disabled="posStore.hasPendingHold || posStore.isRecalling || (posStore.pendingRecallNumber && posStore.pendingRecallNumber !== parkedOrder.holdNumber)"
                 >
-                  Recall Order
+                  {{ posStore.pendingRecallNumber === parkedOrder.holdNumber ? 'Retry Recall' : 'Recall Order' }}
                 </button>
               </div>
             </div>
@@ -410,9 +419,9 @@ function handlePrint() {
           </div>
 
           <div class="mt-5 grid gap-3">
-            <button class="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="checkoutSale">{{ posStore.isPreparingCheckout ? 'Checking stock...' : 'Checkout' }}</button>
-            <button class="rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="holdCurrentOrder">Hold Order</button>
-            <button class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout" @click="posStore.clearCart()">Clear Cart</button>
+            <button class="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout || posStore.isHoldPending" @click="checkoutSale">{{ posStore.isPreparingCheckout ? 'Checking stock...' : 'Checkout' }}</button>
+            <button class="rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout || posStore.isHolding || Boolean(posStore.pendingRecallNumber)" @click="holdCurrentOrder">{{ posStore.hasPendingHold ? 'Retry Hold Order' : 'Hold Order' }}</button>
+            <button class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" :disabled="posStore.cartItems.length === 0 || posStore.isPreparingCheckout || posStore.isHoldPending" @click="posStore.clearCart()">Clear Cart</button>
           </div>
 
           <div v-if="checkoutNotice" class="mt-4 rounded-2xl border px-3 py-3 text-sm" :class="checkoutNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'">{{ checkoutNotice.message }}</div>

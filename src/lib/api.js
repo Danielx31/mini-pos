@@ -16,6 +16,10 @@ export async function api(path, options = {}) {
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message ?? `Request failed (${response.status}).`);
+  if (!response.ok) {
+    const error = new Error(data.message ?? `Request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }

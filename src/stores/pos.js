@@ -15,6 +15,13 @@ export const usePosStore = defineStore("pos", () => {
   const couponCode = ref("");
   const couponError = ref("");
   const parkedOrders = ref([]);
+  const pendingHold = ref(null);
+  const pendingRecall = ref(null);
+  const isHolding = ref(false);
+  const isRecalling = ref(false);
+  const isHoldPending = computed(() => Boolean(pendingHold.value || pendingRecall.value));
+  const hasPendingHold = computed(() => Boolean(pendingHold.value));
+  const pendingRecallNumber = computed(() => pendingRecall.value?.holdNumber ?? null);
   const checkoutKey = ref(crypto.randomUUID());
   const isPreparingCheckout = ref(false);
   const isCompletingCheckout = ref(false);
@@ -95,6 +102,7 @@ export const usePosStore = defineStore("pos", () => {
   const totalParkedOrders = computed(() => parkedOrders.value.length);
 
   function addToCart(product) {
+    if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before changing the cart." };
     // Check if product is in stock
     if (!productsStore.checkStockAvailability(product.id, 1)) {
       return { ok: false, message: `"${product.name}" is out of stock.` };
@@ -143,6 +151,7 @@ export const usePosStore = defineStore("pos", () => {
   }
 
   function updateQuantity(productId, quantity) {
+    if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before changing the cart." };
     const nextQuantity = Number(quantity);
 
     if (!Number.isFinite(nextQuantity)) {
@@ -174,18 +183,24 @@ export const usePosStore = defineStore("pos", () => {
   }
 
   function removeFromCart(productId) {
+    if (isHoldPending.value) return;
     cartItems.value = cartItems.value.filter(
       (item) => item.productId !== productId,
     );
   }
 
   function clearCart() {
+    if (isHoldPending.value) return;
     cartItems.value = [];
     checkoutKey.value = crypto.randomUUID();
     removeCoupon();
   }
 
   function applyCoupon() {
+    if (isHoldPending.value) {
+      couponError.value = "Finish the pending hold or recall before changing the cart.";
+      return;
+    }
     couponError.value = "";
 
     const result = couponsStore.validateCoupon(
@@ -203,12 +218,14 @@ export const usePosStore = defineStore("pos", () => {
   }
 
   function removeCoupon() {
+    if (isHoldPending.value) return;
     appliedCoupon.value = null;
     couponCode.value = "";
     couponError.value = "";
   }
 
   async function initiateCheckout() {
+    if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before checkout." };
     if (isPreparingCheckout.value || isCompletingCheckout.value) {
       return { ok: false, message: "Checkout is already in progress." };
     }
@@ -252,6 +269,9 @@ export const usePosStore = defineStore("pos", () => {
   }
 
   async function parkCurrentOrder(options = {}) {
+    if (pendingRecall.value || isHolding.value || isPreparingCheckout.value || isCompletingCheckout.value) {
+      return { ok: false, message: "Finish the current hold, recall, or checkout first." };
+    }
     if (cartItems.value.length === 0) {
       return {
         ok: false,
@@ -259,21 +279,33 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
-    try {
-      const result = await api("/holds", { method: "POST", body: {
+    if (!pendingHold.value) {
+      pendingHold.value = { holdKey: crypto.randomUUID(),
         items: cartItems.value.map(({ productId, quantity }) => ({ productId, quantity })),
         couponCode: appliedCoupon.value?.code,
         customerLabel: options.customerLabel,
         note: options.note,
-      } });
+      };
+    }
+    isHolding.value = true;
+    try {
+      const result = await api("/holds", { method: "POST", body: pendingHold.value });
+      if (!result.ok || !result.hold?.holdNumber || !Array.isArray(result.parkedOrders)) throw new Error("Could not confirm the saved hold.");
+      pendingHold.value = null;
       parkedOrders.value = result.parkedOrders;
       clearCart();
       usePaymentStore().resetPayment();
       return result;
-    } catch (error) { return { ok: false, message: error.message }; }
+    } catch (error) {
+      if (error.status >= 400 && error.status < 500) pendingHold.value = null;
+      return { ok: false, message: pendingHold.value ? `${error.message} Hold status is uncertain. Retry Hold Order before changing the cart.` : error.message };
+    } finally { isHolding.value = false; }
   }
 
   async function recallParkedOrder(holdNumber) {
+    if (pendingHold.value || isRecalling.value || isPreparingCheckout.value || isCompletingCheckout.value || (pendingRecall.value && pendingRecall.value.holdNumber !== holdNumber)) {
+      return { ok: false, message: "Finish the current hold, recall, or checkout first." };
+    }
     if (cartItems.value.length > 0) {
       return {
         ok: false,
@@ -281,18 +313,26 @@ export const usePosStore = defineStore("pos", () => {
       };
     }
 
+    pendingRecall.value ||= { holdNumber, recallKey: crypto.randomUUID() };
+    isRecalling.value = true;
     try {
-      const result = await api(`/holds/${encodeURIComponent(holdNumber)}/recall`, { method: "POST" });
+      const result = await api(`/holds/${encodeURIComponent(holdNumber)}/recall`, { method: "POST", body: { recallKey: pendingRecall.value.recallKey } });
+      if (!result.ok || !Array.isArray(result.hold?.items) || !Array.isArray(result.parkedOrders)) throw new Error("Could not confirm the recalled cart.");
+      pendingRecall.value = null;
       cartItems.value = result.hold.items.map((item) => ({ ...item }));
       appliedCoupon.value = result.hold.coupon;
       couponCode.value = "";
       couponError.value = "";
       parkedOrders.value = result.parkedOrders;
       return result;
-    } catch (error) { return { ok: false, message: error.message }; }
+    } catch (error) {
+      if (error.status >= 400 && error.status < 500) pendingRecall.value = null;
+      return { ok: false, message: pendingRecall.value ? `${error.message} Recall status is uncertain. Retry this hold before changing the cart.` : error.message };
+    } finally { isRecalling.value = false; }
   }
 
   async function removeParkedOrder(holdNumber) {
+    if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before removing a parked order." };
     try {
       const result = await api(`/holds/${encodeURIComponent(holdNumber)}`, { method: "DELETE" });
       parkedOrders.value = result.parkedOrders;
@@ -301,6 +341,7 @@ export const usePosStore = defineStore("pos", () => {
   }
 
   async function completeCheckout() {
+    if (isHoldPending.value) return { ok: false, message: "Finish the pending hold or recall before checkout." };
     const paymentStore = usePaymentStore();
     if (isCompletingCheckout.value) return { ok: false, message: "Checkout is already in progress." };
 
@@ -348,6 +389,11 @@ export const usePosStore = defineStore("pos", () => {
     totalItems,
     parkedOrders,
     totalParkedOrders,
+    isHolding,
+    isRecalling,
+    isHoldPending,
+    hasPendingHold,
+    pendingRecallNumber,
     addToCart,
     updateQuantity,
     appliedCoupon,

@@ -156,8 +156,16 @@ export async function initializeDatabase(db) {
       CREATE INDEX IF NOT EXISTS idx_opening_credit_payments_credit ON opening_credit_payments(opening_credit_id);
       CREATE TABLE IF NOT EXISTS holds (
         hold_number TEXT PRIMARY KEY, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
-        created_by TEXT NOT NULL REFERENCES users(id)
+        created_by TEXT NOT NULL REFERENCES users(id), hold_key TEXT, request_json TEXT,
+        recalled INTEGER NOT NULL DEFAULT 0, recall_key TEXT, recalled_payload_json TEXT
       );
+      ALTER TABLE holds ADD COLUMN IF NOT EXISTS hold_key TEXT;
+      ALTER TABLE holds ADD COLUMN IF NOT EXISTS request_json TEXT;
+      ALTER TABLE holds ADD COLUMN IF NOT EXISTS recalled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE holds ADD COLUMN IF NOT EXISTS recall_key TEXT;
+      ALTER TABLE holds ADD COLUMN IF NOT EXISTS recalled_payload_json TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_holds_hold_key ON holds(hold_key);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_holds_recall_key ON holds(recall_key);
       CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
       CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
     `);
