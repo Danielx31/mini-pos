@@ -6,6 +6,7 @@ import { useTaxStore } from "../stores/taxes";
 import { useCurrency } from "../composables/useFormatters";
 import { formatTaxRate } from "../constants/taxes";
 import AppNavbar from "../components/AppNavbar.vue";
+import ProductImagesManager from "../components/ProductImagesManager.vue";
 import { PRODUCT_ICONS } from "../../shared/product-icons.js";
 
 const productsStore = useProductsStore();
@@ -29,6 +30,8 @@ const taxRateInputs = ref({});
 
 const showAddForm = ref(false);
 const editingProductId = ref(null);
+const imageProductId = ref(null);
+const imageProduct = computed(() => productsStore.products.find((product) => product.id === imageProductId.value) ?? null);
 
 const formName = ref("");
 const formCategory = ref("");
@@ -96,6 +99,12 @@ function openEditForm(product) {
   formLowStockThreshold.value = String(product.lowStockThreshold || 0);
   editingProductId.value = product.id;
   showAddForm.value = false;
+}
+
+async function openImages(product) {
+  imageProductId.value = product.id;
+  await nextTick();
+  document.getElementById("product-images")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function submitAdd() {
@@ -338,7 +347,7 @@ async function resetTaxRates() {
           </div>
           <fieldset class="sm:col-span-5">
             <legend class="mb-1 text-sm font-medium text-slate-700">Customer menu icon</legend>
-            <p class="mb-3 text-xs text-slate-500">Choose the picture customers see for this product. The category default keeps the current menu icon.</p>
+            <p class="mb-3 text-xs text-slate-500">Choose the icon customers see until photos are uploaded. The category default keeps the current menu icon.</p>
             <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
               <button type="button" :aria-pressed="formIcon === null" class="flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" :class="formIcon === null ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'" @click="formIcon = null">
                 <span class="text-2xl" aria-hidden="true">✦</span>
@@ -356,6 +365,8 @@ async function resetTaxRates() {
           </div>
         </form>
       </div>
+
+      <ProductImagesManager v-if="imageProduct" :product="imageProduct" @close="imageProductId = null" />
 
       <div class="mb-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -457,6 +468,7 @@ async function resetTaxRates() {
               <td class="px-5 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors" @click="openEditForm(product)">Edit</button>
+                  <button type="button" class="rounded-full border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 transition-colors" @click="openImages(product)">Photos</button>
                   <button v-if="product.stock > 0" type="button" class="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 transition-colors" @click="openDisposal(product)">Dispose expired</button>
                   <button class="rounded-full border border-rose-200 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50" :disabled="!authStore.isAdmin && pendingRemovalIds.has(product.id)" @click="confirmDelete(product)">{{ authStore.isAdmin ? 'Remove' : pendingRemovalIds.has(product.id) ? 'Pending approval' : 'Request removal' }}</button>
                 </div>

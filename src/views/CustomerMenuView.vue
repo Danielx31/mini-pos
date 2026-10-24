@@ -2,11 +2,13 @@
 import { computed, onMounted, ref } from "vue";
 import { useCurrency } from "../composables/useFormatters";
 import { api } from "../lib/api";
+import ProductPhotoCarousel from "../components/ProductPhotoCarousel.vue";
 
 type MenuProduct = {
   name: string;
   category: string;
   icon: string | null;
+  images: { id: string; url: string }[];
   price: number;
 };
 
@@ -167,10 +169,8 @@ onMounted(loadMenu);
 
           <div v-if="visibleProducts.length > 0" class="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <article v-for="product in visibleProducts" :key="`${product.category}:${product.name}`" class="group overflow-hidden rounded-[1.65rem] border border-stone-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-950/10">
-              <div class="relative flex h-36 items-center justify-center overflow-hidden" :class="categoryAppearance(product.category).background">
-                <div class="absolute -right-7 -top-9 h-32 w-32 rounded-full border-[1.5rem] border-white/40" aria-hidden="true" />
-                <div class="absolute -bottom-12 -left-8 h-28 w-28 rounded-full bg-white/30" aria-hidden="true" />
-                <span class="relative text-6xl transition duration-200 group-hover:scale-110" aria-hidden="true">{{ product.icon || categoryAppearance(product.category).symbol }}</span>
+              <div class="relative h-44 overflow-hidden" :class="categoryAppearance(product.category).background">
+                <ProductPhotoCarousel :images="product.images ?? []" :product-name="product.name" :fallback-icon="product.icon || categoryAppearance(product.category).symbol" />
               </div>
               <div class="flex min-h-48 flex-col p-5">
                 <span class="self-start rounded-full px-3 py-1 text-[0.7rem] font-black uppercase tracking-wider" :class="categoryAppearance(product.category).badge">{{ product.category }}</span>

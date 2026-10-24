@@ -25,6 +25,9 @@ export const useProductsStore = defineStore("products", () => {
 
   function addProduct(input) { return mutate("/products", "POST", input); }
   function updateProduct(id, input) { return mutate(`/products/${encodeURIComponent(id)}`, "PUT", input); }
+  function addProductImage(id, input) { return mutate(`/products/${encodeURIComponent(id)}/images`, "POST", input); }
+  function deleteProductImage(id, imageId) { return mutate(`/products/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, "DELETE"); }
+  function loadProductImages(id) { return api(`/products/${encodeURIComponent(id)}/images`); }
   function deleteProduct(id) { return mutate(`/products/${encodeURIComponent(id)}`, "DELETE"); }
   function clearCatalog() { return mutate("/products", "DELETE"); }
   function disposeExpiredStock(id, input) { return mutate(`/products/${encodeURIComponent(id)}/disposals`, "POST", input); }
@@ -50,5 +53,5 @@ export const useProductsStore = defineStore("products", () => {
   function checkStockAvailability(id, quantity) { return (products.value.find((product) => product.id === id)?.stock ?? 0) >= quantity; }
   function getProductStock(id) { return products.value.find((product) => product.id === id)?.stock ?? 0; }
 
-  return { products, deletionRequests, disposals, categories, totalProducts, lowStockAlerts, outOfStockProducts, addProduct, updateProduct, deleteProduct, clearCatalog, disposeExpiredStock, loadStockDisposals, loadDeletionRequests, requestProductRemoval, reviewDeletionRequest, getProductByBarcode, checkStockAvailability, getProductStock };
+  return { products, deletionRequests, disposals, categories, totalProducts, lowStockAlerts, outOfStockProducts, addProduct, updateProduct, addProductImage, deleteProductImage, loadProductImages, deleteProduct, clearCatalog, disposeExpiredStock, loadStockDisposals, loadDeletionRequests, requestProductRemoval, reviewDeletionRequest, getProductByBarcode, checkStockAvailability, getProductStock };
 });

@@ -99,6 +99,14 @@ export async function initializeDatabase(db) {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS icon TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_lower ON products (LOWER(sku));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_lower ON products (LOWER(name));
+      CREATE TABLE IF NOT EXISTS product_images (
+        id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+        mime_type TEXT NOT NULL CHECK(mime_type IN ('image/jpeg','image/png','image/webp')),
+        image_base64 TEXT NOT NULL, image_hash TEXT NOT NULL,
+        byte_size INTEGER NOT NULL CHECK(byte_size > 0),
+        uploaded_at TEXT NOT NULL, uploaded_by TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id,uploaded_at,id);
       CREATE TABLE IF NOT EXISTS product_delete_requests (
         id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), product_name TEXT NOT NULL,
         requested_by TEXT NOT NULL REFERENCES users(id), requested_at TEXT NOT NULL,

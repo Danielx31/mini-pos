@@ -1,5 +1,5 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,8 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const MANAGEMENT_ROLES = ["admin", "manager"];
 const ACCOUNT_ROLES = [...MANAGEMENT_ROLES, "cashier"];
+const MAX_PRODUCT_IMAGE_BYTES = 2 * 1024 * 1024;
+const PRODUCT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -49,8 +51,28 @@ function cents(value, label) {
   return amountCents;
 }
 
+async function readProductImages(db, productId = null, inStockOnly = false) {
+  const rows = await db.prepare(`SELECT images.id,images.product_id,images.byte_size FROM product_images AS images
+    JOIN products ON products.id=images.product_id WHERE products.active=1
+    ${inStockOnly ? "AND products.stock>0" : ""} ${productId ? "AND images.product_id=?" : ""}
+    ORDER BY images.uploaded_at,images.id`).all(...(productId ? [productId] : []));
+  const byProduct = new Map();
+  for (const row of rows) {
+    if (!byProduct.has(row.product_id)) byProduct.set(row.product_id, []);
+    byProduct.get(row.product_id).push({ id: row.id, url: `/api/v1/product-images/${row.id}`, byteSize: row.byte_size });
+  }
+  return byProduct;
+}
+
 async function readProducts(db) {
   return (await db.prepare("SELECT * FROM products WHERE active=1 ORDER BY name").all()).map(productDto);
+}
+
+function validProductImage(bytes, mimeType) {
+  if (mimeType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (mimeType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === "image/webp") return bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+  return false;
 }
 
 async function readStockDisposals(db) {
@@ -286,6 +308,7 @@ export function createApp(db, options = {}) {
     res.set("Cache-Control", "no-store");
     next();
   });
+  app.use("/api/v1/products/:id/images", express.json({ limit: "4mb" }));
   app.use(express.json({ limit: "64kb" }));
   app.use("/api/v1", async (req, _res, next) => {
     try {
@@ -413,11 +436,63 @@ export function createApp(db, options = {}) {
   });
   app.get("/api/v1/menu", async (_req, res, next) => {
     try {
-      const products = await db.prepare("SELECT name,category,icon,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all();
-      res.json(products.map((product) => ({ name: product.name, category: product.category, icon: product.icon ?? null, price: product.price_cents / 100 })));
+      const [products, images] = await Promise.all([
+        db.prepare("SELECT id,name,category,icon,price_cents FROM products WHERE active=1 AND stock > 0 ORDER BY category,name").all(),
+        readProductImages(db, null, true),
+      ]);
+      res.json(products.map((product) => ({ name: product.name, category: product.category, icon: product.icon ?? null,
+        price: product.price_cents / 100, images: images.get(product.id) ?? [] })));
     } catch (error) { next(error); }
   });
   app.get("/api/v1/products", auth, async (_req, res) => res.json(await readProducts(db)));
+  app.get("/api/v1/products/:id/images", auth, manager, async (req, res, next) => {
+    try {
+      if (!await db.prepare("SELECT id FROM products WHERE id=? AND active=1").get(req.params.id)) throw new ApiError(404, "Product not found in the active catalog.");
+      res.json((await readProductImages(db, req.params.id)).get(req.params.id) ?? []);
+    } catch (error) { next(error); }
+  });
+  app.get("/api/v1/product-images/:imageId", async (req, res, next) => {
+    try {
+      const image = await db.prepare(`SELECT images.image_base64,images.mime_type FROM product_images AS images
+        JOIN products ON products.id=images.product_id WHERE images.id=? AND products.active=1`).get(req.params.imageId);
+      if (!image) throw new ApiError(404, "Product image not found.");
+      res.set("Content-Type", image.mime_type);
+      res.set("Cache-Control", "public, max-age=300");
+      res.send(Buffer.from(image.image_base64, "base64"));
+    } catch (error) { next(error); }
+  });
+  app.post("/api/v1/products/:id/images", auth, manager, async (req, res, next) => {
+    try {
+      const { imageKey, mimeType, data } = req.body ?? {};
+      requireValid(typeof imageKey === "string" && /^[0-9a-f-]{36}$/i.test(imageKey), "Invalid image request ID.");
+      requireValid(PRODUCT_IMAGE_TYPES.has(mimeType), "Upload a JPEG, PNG, or WebP image.");
+      requireValid(typeof data === "string" && data.length > 0 && data.length <= Math.ceil(MAX_PRODUCT_IMAGE_BYTES / 3) * 4 + 4 &&
+        data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data), "Image data is invalid or too large.");
+      const bytes = Buffer.from(data, "base64");
+      requireValid(bytes.length > 0 && bytes.length <= MAX_PRODUCT_IMAGE_BYTES && validProductImage(bytes, mimeType), "Image data does not match its type or exceeds 2 MB.");
+      const imageHash = createHash("sha256").update(bytes).digest("hex");
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT product_id,mime_type,image_hash FROM product_images WHERE id=?").get(imageKey);
+        if (previous) {
+          if (previous.product_id !== req.params.id || previous.mime_type !== mimeType || previous.image_hash !== imageHash) throw new ApiError(409, "Image request ID was already used for another upload.");
+          return { duplicate: true };
+        }
+        const product = await db.prepare("SELECT id FROM products WHERE id=? AND active=1").get(req.params.id);
+        if (!product) throw new ApiError(404, "Product not found in the active catalog.");
+        await db.prepare(`INSERT INTO product_images (id,product_id,mime_type,image_base64,image_hash,byte_size,uploaded_at,uploaded_by)
+          VALUES (?,?,?,?,?,?,?,?)`).run(imageKey, product.id, mimeType, data, imageHash, bytes.length, new Date().toISOString(), req.session.user_id);
+        return { duplicate: false };
+      });
+      res.status(result.duplicate ? 200 : 201).json({ ok: true, message: result.duplicate ? "Image was already uploaded." : "Product image added.", images: (await readProductImages(db, req.params.id)).get(req.params.id) ?? [] });
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/v1/products/:id/images/:imageId", auth, manager, async (req, res, next) => {
+    try {
+      const removed = await db.prepare("DELETE FROM product_images WHERE id=? AND product_id=?").run(req.params.imageId, req.params.id);
+      if (!removed.changes) throw new ApiError(404, "Product image not found.");
+      res.json({ ok: true, message: "Product image removed.", images: (await readProductImages(db, req.params.id)).get(req.params.id) ?? [] });
+    } catch (error) { next(error); }
+  });
   function productInput(body) {
     const icon = body?.icon ?? null;
     requireValid(icon === null || PRODUCT_ICON_VALUES.has(icon), "Choose a supported product icon or use the category default.");
