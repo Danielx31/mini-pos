@@ -71,6 +71,8 @@ Any signed-in staff member can choose **Utang · Pay later** at checkout. Enter 
 
 To carry forward credit from before Mini POS, open the staff-only **Utang list** and use **Add credit from before Mini POS**. Enter the amount still owed after any earlier payments, with the customer's name and optional matching contact, original date, and item details. This opening balance appears in the customer and overall Utang totals but does not create a sale or change stock. Open the customer to record later cash repayments and see who recorded them. Use the same name and contact as future utang sales so the records group together. **Orders** reports outstanding POS utang only; the Utang list includes both POS sales and opening balances.
 
+The **Utang list** can download a PNG for one customer's current open balance or PNG pages for all open customer balances. Each image includes the supplied BDO, GCash, MariBank, and Maya payment QR panels. The export refreshes balances first and includes both POS Utang sales and carried-forward credit; the all-balances image lists only customers who still owe money. The QR codes are static and do not encode the amount. Customers must enter the amount and confirm the recipient, and Mini POS does not automatically verify QR payments or reduce an Utang balance when a QR is scanned. Lists with more than 25 open customers download multiple numbered PNG files.
+
 ### Move existing SQLite data
 
 Keep a backup of `server/data/pos.sqlite` and stop the old API before the final import. With `DATABASE_URL` pointing to a **fresh** PostgreSQL database, run:

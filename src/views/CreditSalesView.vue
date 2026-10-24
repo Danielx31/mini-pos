@@ -7,6 +7,7 @@ import { ROUTE_NAMES } from "../constants/routes";
 import { api } from "../lib/api";
 import { useOrdersStore } from "../stores/orders";
 import { fromCents, toCents } from "../../shared/money.js";
+import { downloadAllUtangImages, downloadCustomerUtangImage } from "../lib/utangImage";
 
 type CreditItem = { productId: string; name: string; quantity: number; price: number; lineTotal: number };
 type CreditSale = {
@@ -73,6 +74,9 @@ const paymentKeys = ref<Record<string, string>>({});
 const paymentSaving = ref("");
 const paymentNotice = ref("");
 const paymentError = ref(false);
+const exportingImage = ref("");
+const exportNotice = ref("");
+const exportError = ref(false);
 
 function matchesRecord(record: CreditRecord) {
   const term = search.value.trim().toLowerCase();
@@ -107,6 +111,7 @@ const customerCredits = computed(() => {
   return [...groups.values()].sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
 });
 const visibleCustomerCredits = computed(() => customerCredits.value.filter((customer) => customer.records.some(matchesRecord)));
+const hasOpenBalances = computed(() => customerCredits.value.some((customer) => customer.balance > 0));
 
 const activeRecords = computed(() => allRecords.value.filter((record) => record.status !== "refunded"));
 const totalCredit = computed(() => fromCents(activeRecords.value.reduce((sum, record) => sum + toCents(record.total), 0)));
@@ -127,17 +132,55 @@ function statusClass(status: CreditSale["status"]) {
   }[status];
 }
 
-async function loadSales() {
+async function loadSales(): Promise<boolean> {
   loading.value = true;
   error.value = "";
   try {
     const [sales, openings] = await Promise.all([api("/credit-sales"), api("/opening-credits")]);
     creditSales.value = (sales as Omit<CreditSale, "kind">[]).map((sale) => ({ ...sale, kind: "sale" }));
     openingCredits.value = (openings as Omit<OpeningCredit, "kind">[]).map((credit) => ({ ...credit, kind: "opening" }));
+    return true;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "Could not load utang sales.";
+    return false;
   } finally {
     loading.value = false;
+  }
+}
+
+async function exportCustomerImage(customer: CustomerCredit): Promise<void> {
+  if (exportingImage.value) return;
+  exportingImage.value = customer.key;
+  exportNotice.value = "";
+  exportError.value = false;
+  try {
+    if (!await loadSales()) throw new Error("Could not refresh the balance. Please try again.");
+    const current = customerCredits.value.find((item) => item.key === customer.key);
+    if (!current || current.balance <= 0) throw new Error("This customer no longer has an open balance.");
+    await downloadCustomerUtangImage(current);
+    exportNotice.value = `Downloaded the current balance image for ${current.name}.`;
+  } catch (cause) {
+    exportError.value = true;
+    exportNotice.value = cause instanceof Error ? cause.message : "Could not generate the Utang image.";
+  } finally {
+    exportingImage.value = "";
+  }
+}
+
+async function exportAllImages(): Promise<void> {
+  if (exportingImage.value) return;
+  exportingImage.value = "all";
+  exportNotice.value = "";
+  exportError.value = false;
+  try {
+    if (!await loadSales()) throw new Error("Could not refresh the balances. Please try again.");
+    const pages = await downloadAllUtangImages(customerCredits.value);
+    exportNotice.value = pages === 1 ? "Downloaded the open Utang balances image." : `Downloaded ${pages} open Utang balance images.`;
+  } catch (cause) {
+    exportError.value = true;
+    exportNotice.value = cause instanceof Error ? cause.message : "Could not generate the Utang images.";
+  } finally {
+    exportingImage.value = "";
   }
 }
 
@@ -213,7 +256,10 @@ onMounted(loadSales);
           <h2 class="mt-1 text-3xl font-bold text-slate-950">Utang list</h2>
           <p class="mt-2 max-w-2xl text-sm text-slate-600">See current utang sales and credit carried over from before Mini POS. Select a customer to review what is owed and what has been paid.</p>
         </div>
-        <button type="button" :disabled="loading" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50" @click="loadSales">{{ loading ? 'Loading...' : 'Refresh list' }}</button>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" :disabled="loading || Boolean(exportingImage)" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50" @click="loadSales">{{ loading ? 'Loading...' : 'Refresh list' }}</button>
+          <button type="button" :disabled="loading || Boolean(exportingImage) || !hasOpenBalances" class="rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50" @click="exportAllImages">{{ exportingImage === 'all' ? 'Generating images...' : 'Download all open balances PNG' }}</button>
+        </div>
       </div>
 
       <div class="mb-6 grid gap-4 sm:grid-cols-3">
@@ -281,11 +327,12 @@ onMounted(loadSales);
       </div>
 
       <p v-if="error" role="alert" class="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{{ error }}</p>
+      <p v-if="exportNotice" :role="exportError ? 'alert' : 'status'" aria-live="polite" class="mb-4 rounded-xl border px-4 py-3 text-sm" :class="exportError ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-900'">{{ exportNotice }}</p>
       <section aria-labelledby="customer-credit-heading" class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b border-slate-200 px-5 py-4">
           <h3 id="customer-credit-heading" class="text-lg font-bold text-slate-950">Credit by customer</h3>
           <p class="mt-1 text-sm text-slate-600">Select a name to see POS utang purchases and older credit balances. Totals include paid and open records; refunded sales are excluded.</p>
-          <p class="mt-1 text-xs text-slate-500">Records are grouped by matching customer name and contact. Use the same details each time to keep a customer's credit together.</p>
+          <p class="mt-1 text-xs text-slate-500">Records are grouped by matching customer name and contact. Use the same details each time to keep a customer's credit together. PNG exports use refreshed open balances and include all four supplied payment QR codes.</p>
         </div>
         <div class="divide-y divide-slate-200">
           <details v-for="customer in visibleCustomerCredits" :key="customer.key" class="group">
@@ -304,6 +351,10 @@ onMounted(loadSales);
               </span>
             </summary>
             <div class="border-t border-slate-100 bg-slate-50 px-5 py-4">
+              <div v-if="customer.balance > 0" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p class="text-sm text-amber-950">Share this customer's current amount owed and payment QR codes.</p>
+                <button type="button" :disabled="loading || Boolean(exportingImage)" class="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50" @click="exportCustomerImage(customer)">{{ exportingImage === customer.key ? 'Generating image...' : 'Download balance PNG' }}</button>
+              </div>
               <div class="space-y-4">
                 <div v-for="record in customer.records" :key="record.kind === 'sale' ? record.orderNumber : record.id" class="rounded-xl border border-slate-200 bg-white p-4">
                   <div class="flex flex-wrap items-start justify-between gap-3">
