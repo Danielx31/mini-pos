@@ -6,6 +6,7 @@ import { useCurrency, useDateTime } from "../composables/useFormatters";
 import { ROUTE_NAMES } from "../constants/routes";
 import { api } from "../lib/api";
 import { useOrdersStore } from "../stores/orders";
+import { useAuthStore } from "../stores/auth";
 import { fromCents, toCents } from "../../shared/money.js";
 import { downloadAllUtangImages, downloadCustomerUtangImage } from "../lib/utangImage";
 
@@ -51,6 +52,7 @@ type CustomerCredit = {
 
 const router = useRouter();
 const ordersStore = useOrdersStore();
+const authStore = useAuthStore();
 const { formatCurrency } = useCurrency();
 const { formatDateTime } = useDateTime();
 const creditSales = ref<CreditSale[]>([]);
@@ -77,6 +79,21 @@ const paymentError = ref(false);
 const exportingImage = ref("");
 const exportNotice = ref("");
 const exportError = ref(false);
+const movingRecord = ref<CreditRecord | null>(null);
+const moveTargetKey = ref("");
+const moveReason = ref("");
+const moveKey = ref(crypto.randomUUID());
+const moveSaving = ref(false);
+const moveNotice = ref("");
+const moveError = ref(false);
+
+function recordId(record: CreditRecord): string {
+  return record.kind === "sale" ? record.orderNumber : record.id;
+}
+
+function customerKey(record: CreditRecord): string {
+  return JSON.stringify([record.customerName.trim().toLowerCase(), record.customerContact?.trim().toLowerCase() || ""]);
+}
 
 function matchesRecord(record: CreditRecord) {
   const term = search.value.trim().toLowerCase();
@@ -95,7 +112,7 @@ const allRecords = computed<CreditRecord[]>(() => [...creditSales.value, ...open
 const customerCredits = computed(() => {
   const groups = new Map<string, CustomerCredit>();
   for (const record of allRecords.value) {
-    const key = JSON.stringify([record.customerName.trim().toLowerCase(), record.customerContact?.trim().toLowerCase() || ""]);
+    const key = customerKey(record);
     let customer = groups.get(key);
     if (!customer) {
       customer = { key, name: record.customerName, contact: record.customerContact, records: [], total: 0, paid: 0, balance: 0 };
@@ -111,6 +128,10 @@ const customerCredits = computed(() => {
   return [...groups.values()].sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
 });
 const visibleCustomerCredits = computed(() => customerCredits.value.filter((customer) => customer.records.some(matchesRecord)));
+const moveTargets = computed(() => customerCredits.value.filter((customer) =>
+  customer.key !== (movingRecord.value ? customerKey(movingRecord.value) : "") && customer.balance > 0));
+const selectedMoveTarget = computed(() => moveTargets.value.find((customer) => customer.key === moveTargetKey.value));
+const balanceAfterMove = computed(() => fromCents(toCents(selectedMoveTarget.value?.balance ?? 0) + toCents(movingRecord.value?.balance ?? 0)));
 const hasOpenBalances = computed(() => customerCredits.value.some((customer) => customer.balance > 0));
 
 const activeRecords = computed(() => allRecords.value.filter((record) => record.status !== "refunded"));
@@ -237,6 +258,42 @@ async function recordOpeningPayment(credit: OpeningCredit) {
   }
 }
 
+function startMove(record: CreditRecord): void {
+  movingRecord.value = record;
+  moveTargetKey.value = "";
+  moveReason.value = "";
+  moveKey.value = crypto.randomUUID();
+  moveNotice.value = "";
+}
+
+async function moveCredit(): Promise<void> {
+  const source = movingRecord.value;
+  const target = selectedMoveTarget.value?.records.find((record) => record.balance > 0 && record.status !== "refunded");
+  if (!source || !target || moveSaving.value) return;
+  moveSaving.value = true;
+  moveNotice.value = "";
+  moveError.value = false;
+  try {
+    const result = await api("/credit-reassignments", { method: "POST", body: {
+      moveKey: moveKey.value, sourceKind: source.kind, sourceId: recordId(source),
+      targetKind: target.kind, targetId: recordId(target), reason: moveReason.value,
+    } }) as { message: string; creditSales: Omit<CreditSale, "kind">[]; openingCredits: Omit<OpeningCredit, "kind">[]; orders: typeof ordersStore.orders };
+    creditSales.value = result.creditSales.map((sale) => ({ ...sale, kind: "sale" }));
+    openingCredits.value = result.openingCredits.map((credit) => ({ ...credit, kind: "opening" }));
+    ordersStore.orders = result.orders;
+    moveNotice.value = result.message;
+    movingRecord.value = null;
+    moveTargetKey.value = "";
+    moveReason.value = "";
+    moveKey.value = crypto.randomUUID();
+  } catch (cause) {
+    moveError.value = true;
+    moveNotice.value = cause instanceof Error ? cause.message : "Could not move this Utang.";
+  } finally {
+    moveSaving.value = false;
+  }
+}
+
 function openOrder(sale: CreditSale) {
   ordersStore.searchTerm = sale.orderNumber;
   ordersStore.dateFilter = "";
@@ -328,11 +385,12 @@ onMounted(loadSales);
 
       <p v-if="error" role="alert" class="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{{ error }}</p>
       <p v-if="exportNotice" :role="exportError ? 'alert' : 'status'" aria-live="polite" class="mb-4 rounded-xl border px-4 py-3 text-sm" :class="exportError ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-900'">{{ exportNotice }}</p>
+      <p v-if="moveNotice" :role="moveError ? 'alert' : 'status'" aria-live="polite" class="mb-4 rounded-xl border px-4 py-3 text-sm" :class="moveError ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-900'">{{ moveNotice }}</p>
       <section aria-labelledby="customer-credit-heading" class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b border-slate-200 px-5 py-4">
           <h3 id="customer-credit-heading" class="text-lg font-bold text-slate-950">Credit by customer</h3>
           <p class="mt-1 text-sm text-slate-600">Select a name to see POS utang purchases and older credit balances. Totals include paid and open records; refunded sales are excluded.</p>
-          <p class="mt-1 text-xs text-slate-500">Records are grouped by matching customer name and contact. Use the same details each time to keep a customer's credit together. PNG exports use refreshed open balances and include all four supplied payment QR codes.</p>
+          <p class="mt-1 text-xs text-slate-500">Records are grouped by matching customer name and contact. Managers can move a wrongly assigned open record to an existing customer. PNG exports use refreshed open balances and include all four supplied payment QR codes.</p>
         </div>
         <div class="divide-y divide-slate-200">
           <details v-for="customer in visibleCustomerCredits" :key="customer.key" class="group">
@@ -376,6 +434,32 @@ onMounted(loadSales);
                   <div class="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
                     <span class="text-slate-600">{{ record.kind === 'sale' ? 'Sale total' : 'Opening balance' }} <strong class="text-slate-950">{{ formatCurrency(record.total) }}</strong> · Paid <strong class="text-emerald-800">{{ formatCurrency(record.paid) }}</strong> · Owed <strong class="text-amber-900">{{ formatCurrency(record.balance) }}</strong></span>
                     <button v-if="record.kind === 'sale' && !record.archived && record.balance > 0 && record.status !== 'refunded'" type="button" class="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50" @click="openOrder(record)">Record payment</button>
+                  </div>
+                  <div v-if="authStore.canManage && record.balance > 0 && record.status !== 'refunded'" class="mt-3 border-t border-slate-100 pt-3">
+                    <button v-if="movingRecord?.kind !== record.kind || (movingRecord && recordId(movingRecord) !== recordId(record))" type="button" :disabled="moveSaving" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50" @click="startMove(record)">Move to another customer</button>
+                    <form v-else class="grid gap-3 sm:grid-cols-2" @submit.prevent="moveCredit">
+                      <div class="sm:col-span-2">
+                        <p class="text-sm font-semibold text-slate-950">Move this {{ record.kind === 'sale' ? 'POS sale' : 'older balance' }} from {{ customer.name }}</p>
+                        <p class="mt-1 text-xs text-slate-600">The full record, its {{ formatCurrency(record.balance) }} open balance, and any repayment history will appear under the selected customer. No payment is recorded.</p>
+                      </div>
+                      <div>
+                        <label for="move-target" class="mb-1 block text-xs font-semibold text-slate-700">Existing customer *</label>
+                        <select id="move-target" v-model="moveTargetKey" required class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100">
+                          <option value="" disabled>Select a customer</option>
+                          <option v-for="target in moveTargets" :key="target.key" :value="target.key">{{ target.name }}{{ target.contact ? ` · ${target.contact}` : '' }} — {{ formatCurrency(target.balance) }} owed</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="move-reason" class="mb-1 block text-xs font-semibold text-slate-700">Reason for correction *</label>
+                        <input id="move-reason" v-model="moveReason" type="text" maxlength="200" required class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="Wrong customer selected at checkout" />
+                      </div>
+                      <p v-if="selectedMoveTarget" class="text-xs text-amber-900 sm:col-span-2">{{ selectedMoveTarget.name }} will owe {{ formatCurrency(balanceAfterMove) }} after the move.</p>
+                      <p v-if="!moveTargets.length" class="text-xs text-slate-600 sm:col-span-2">Add the correct customer's Utang first, then move this record.</p>
+                      <div class="flex flex-wrap gap-2 sm:col-span-2">
+                        <button type="submit" :disabled="moveSaving || !selectedMoveTarget" class="rounded-lg bg-amber-700 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50">{{ moveSaving ? 'Moving...' : 'Move Utang' }}</button>
+                        <button type="button" :disabled="moveSaving" class="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50" @click="movingRecord = null">Cancel</button>
+                      </div>
+                    </form>
                   </div>
                   <template v-if="record.kind === 'opening'">
                     <form v-if="record.balance > 0" class="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[1fr_1fr_auto]" @submit.prevent="recordOpeningPayment(record)">

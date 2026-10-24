@@ -698,6 +698,55 @@ export function createApp(db, options = {}) {
     try { res.json(await readOpeningCredits(db)); }
     catch (error) { next(error); }
   });
+  app.post("/api/v1/credit-reassignments", auth, manager, async (req, res, next) => {
+    try {
+      const { sourceKind, targetKind } = req.body ?? {};
+      requireValid(["sale", "opening"].includes(sourceKind) && ["sale", "opening"].includes(targetKind), "Choose valid Utang records.");
+      const sourceId = text(req.body.sourceId, 100, "Source record");
+      const targetId = text(req.body.targetId, 100, "Destination record");
+      const reason = text(req.body.reason, 200, "Reason");
+      requireValid(typeof req.body.moveKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.moveKey), "Invalid move request ID.");
+      requireValid(sourceKind !== targetKind || sourceId !== targetId, "Choose a different customer's Utang.");
+      const result = await db.transaction(async () => {
+        const previous = await db.prepare("SELECT * FROM credit_reassignments WHERE move_key=?").get(req.body.moveKey);
+        if (previous) {
+          if (previous.source_kind !== sourceKind || previous.source_id !== sourceId || previous.target_kind !== targetKind || previous.target_id !== targetId || previous.reason !== reason) {
+            throw new ApiError(409, "Move request ID was already used for a different correction.");
+          }
+          return { duplicate: true };
+        }
+        const source = sourceKind === "sale"
+          ? await db.prepare(`SELECT credit_sales.*,orders.refunded FROM credit_sales
+              JOIN orders ON orders.order_number=credit_sales.order_number WHERE credit_sales.order_number=?`).get(sourceId)
+          : await db.prepare("SELECT * FROM opening_credits WHERE id=?").get(sourceId);
+        const target = targetKind === "sale"
+          ? await db.prepare(`SELECT credit_sales.*,orders.refunded FROM credit_sales
+              JOIN orders ON orders.order_number=credit_sales.order_number WHERE credit_sales.order_number=?`).get(targetId)
+          : await db.prepare("SELECT * FROM opening_credits WHERE id=?").get(targetId);
+        if (!source || !target) throw new ApiError(404, "Source or destination Utang record was not found.");
+        if (source.refunded || source.balance_cents <= 0) throw new ApiError(409, "Only open, non-refunded Utang can be moved.");
+        if (target.refunded || target.balance_cents <= 0) throw new ApiError(409, "Choose a customer with an open, non-refunded Utang.");
+        const customerKey = (row) => JSON.stringify([row.customer_name.trim().toLowerCase(), row.customer_contact?.trim().toLowerCase() || ""]);
+        if (customerKey(source) === customerKey(target)) throw new ApiError(409, "These Utang records already belong to the same customer.");
+        const table = sourceKind === "sale" ? "credit_sales" : "opening_credits";
+        const key = sourceKind === "sale" ? "order_number" : "id";
+        const updated = await db.prepare(`UPDATE ${table} SET customer_name=?,customer_contact=? WHERE ${key}=? AND balance_cents>0`)
+          .run(target.customer_name, target.customer_contact, sourceId);
+        if (!updated.changes) throw new ApiError(409, "This Utang changed. Refresh the list and try again.");
+        await db.prepare(`INSERT INTO credit_reassignments
+          (id,move_key,source_kind,source_id,target_kind,target_id,from_customer_name,from_customer_contact,
+           to_customer_name,to_customer_contact,reason,moved_by,moved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(randomUUID(), req.body.moveKey, sourceKind, sourceId, targetKind, targetId,
+            source.customer_name, source.customer_contact, target.customer_name, target.customer_contact,
+            reason, req.session.user_id, new Date().toISOString());
+        return { duplicate: false };
+      });
+      res.status(result.duplicate ? 200 : 201).json({
+        ok: true, message: result.duplicate ? "This Utang correction was already saved." : "Utang moved to the selected customer.",
+        creditSales: await readCreditSales(db), openingCredits: await readOpeningCredits(db), orders: await readOrders(db),
+      });
+    } catch (error) { next(error); }
+  });
   app.post("/api/v1/opening-credits", auth, async (req, res, next) => {
     try {
       requireValid(typeof req.body?.entryKey === "string" && /^[0-9a-f-]{36}$/i.test(req.body.entryKey), "Invalid opening credit request ID.");

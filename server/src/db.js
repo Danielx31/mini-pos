@@ -155,6 +155,15 @@ export async function initializeDatabase(db) {
         note TEXT, received_by TEXT NOT NULL REFERENCES users(id), received_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_opening_credit_payments_credit ON opening_credit_payments(opening_credit_id);
+      CREATE TABLE IF NOT EXISTS credit_reassignments (
+        id TEXT PRIMARY KEY, move_key TEXT NOT NULL UNIQUE,
+        source_kind TEXT NOT NULL CHECK(source_kind IN ('sale','opening')),
+        source_id TEXT NOT NULL, target_kind TEXT NOT NULL CHECK(target_kind IN ('sale','opening')),
+        target_id TEXT NOT NULL, from_customer_name TEXT NOT NULL, from_customer_contact TEXT,
+        to_customer_name TEXT NOT NULL, to_customer_contact TEXT,
+        reason TEXT NOT NULL, moved_by TEXT NOT NULL REFERENCES users(id), moved_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_credit_reassignments_source ON credit_reassignments(source_kind,source_id);
       CREATE TABLE IF NOT EXISTS holds (
         hold_number TEXT PRIMARY KEY, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
         created_by TEXT NOT NULL REFERENCES users(id), hold_key TEXT, request_json TEXT,
