@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useCurrency } from "../composables/useFormatters";
 import { api } from "../lib/api";
 import ProductPhotoCarousel from "../components/ProductPhotoCarousel.vue";
@@ -43,6 +43,15 @@ const selectedCategory = ref("");
 const isLoading = ref(true);
 const errorMessage = ref("");
 const copyStatus = ref<"idle" | "copied" | "error">("idle");
+const selectedProduct = ref<MenuProduct | null>(null);
+const dialogPanel = ref<HTMLElement | null>(null);
+const closeButton = ref<HTMLButtonElement | null>(null);
+const SWIPE_THRESHOLD_PX = 40;
+const SWIPE_CLICK_DELAY_MS = 400;
+let touchStartX = 0;
+let lastSwipeAt = 0;
+let previousFocus: HTMLElement | null = null;
+let bodyHadOverflowHidden = false;
 
 const categories = computed(() =>
   [...new Set(products.value.map((product) => product.category))].sort(),
@@ -63,6 +72,9 @@ async function loadMenu() {
     const result = await api("/menu");
     if (!Array.isArray(result)) throw new Error("The menu is unavailable right now.");
     products.value = result as MenuProduct[];
+    if (selectedProduct.value && !products.value.some((product) =>
+      product.name === selectedProduct.value?.name && product.category === selectedProduct.value?.category,
+    )) closeProduct();
     if (selectedCategory.value && !categories.value.includes(selectedCategory.value)) {
       selectedCategory.value = "";
     }
@@ -81,6 +93,71 @@ async function copyViberNumber() {
     copyStatus.value = "error";
   }
 }
+
+function openProduct(product: MenuProduct): void {
+  copyStatus.value = "idle";
+  selectedProduct.value = product;
+}
+
+function closeProduct(): void {
+  selectedProduct.value = null;
+}
+
+function cardTouchStart(event: TouchEvent): void {
+  touchStartX = event.touches[0]?.clientX ?? 0;
+}
+
+function cardTouchEnd(event: TouchEvent): void {
+  const distance = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+  if (Math.abs(distance) > SWIPE_THRESHOLD_PX) lastSwipeAt = Date.now();
+}
+
+function cardClicked(product: MenuProduct): void {
+  if (Date.now() - lastSwipeAt < SWIPE_CLICK_DELAY_MS) return;
+  openProduct(product);
+}
+
+function dialogKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    closeProduct();
+    return;
+  }
+  if (event.key !== "Tab" || !dialogPanel.value) return;
+  const focusable = Array.from(dialogPanel.value.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  ));
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+watch(selectedProduct, async (product, previous) => {
+  if (product) {
+    if (!previous) {
+      previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      bodyHadOverflowHidden = document.body.classList.contains("overflow-hidden");
+      document.body.classList.add("overflow-hidden");
+    }
+    await nextTick();
+    closeButton.value?.focus();
+  } else if (previous) {
+    if (!bodyHadOverflowHidden) document.body.classList.remove("overflow-hidden");
+    await nextTick();
+    previousFocus?.focus();
+    previousFocus = null;
+  }
+});
+
+onBeforeUnmount(() => {
+  if (selectedProduct.value && !bodyHadOverflowHidden) document.body.classList.remove("overflow-hidden");
+});
 
 onMounted(loadMenu);
 </script>
@@ -168,18 +245,18 @@ onMounted(loadMenu);
           <p class="mt-5 text-sm font-semibold text-slate-600" role="status">Showing {{ visibleProducts.length }} of {{ products.length }} products</p>
 
           <div v-if="visibleProducts.length > 0" class="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <article v-for="product in visibleProducts" :key="`${product.category}:${product.name}`" class="group overflow-hidden rounded-[1.65rem] border border-stone-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-950/10">
+            <article v-for="product in visibleProducts" :key="`${product.category}:${product.name}`" class="group cursor-pointer overflow-hidden rounded-[1.65rem] border border-stone-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-950/10 focus-within:ring-2 focus-within:ring-emerald-600" @click="cardClicked(product)" @touchstart.passive="cardTouchStart" @touchend.passive="cardTouchEnd">
               <div class="relative h-44 overflow-hidden" :class="categoryAppearance(product.category).background">
                 <ProductPhotoCarousel :images="product.images ?? []" :product-name="product.name" :fallback-icon="product.icon || categoryAppearance(product.category).symbol" />
               </div>
-              <div class="flex min-h-48 flex-col p-5">
+              <button type="button" class="flex min-h-48 w-full flex-col p-5 text-left focus:outline-none" :aria-label="`View details for ${product.name}`">
                 <span class="self-start rounded-full px-3 py-1 text-[0.7rem] font-black uppercase tracking-wider" :class="categoryAppearance(product.category).badge">{{ product.category }}</span>
-                <h3 class="mt-3 flex-1 text-lg font-bold leading-snug text-slate-950">{{ product.name }}</h3>
-                <div class="mt-5 flex flex-wrap items-end justify-between gap-2 border-t border-stone-100 pt-4">
+                <span class="mt-3 flex-1 text-lg font-bold leading-snug text-slate-950">{{ product.name }}</span>
+                <span class="mt-5 flex w-full flex-wrap items-end justify-between gap-2 border-t border-stone-100 pt-4">
                   <span class="text-2xl font-black tracking-tight text-emerald-950">{{ formatCurrency(product.price) }}</span>
                   <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />In stock</span>
-                </div>
-              </div>
+                </span>
+              </button>
             </article>
           </div>
           <p v-else class="mt-5 rounded-3xl border border-dashed border-stone-300 bg-white px-5 py-14 text-center text-sm text-slate-600">No products match your search. Try another word or category.</p>
@@ -195,5 +272,37 @@ onMounted(loadMenu);
         <p class="mt-4 text-xs leading-5 text-emerald-100/80">Prices and availability can change. Please wait for Daniel B. to confirm your order.</p>
       </footer>
     </main>
+
+    <Teleport to="body">
+      <div v-if="selectedProduct" class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 sm:items-center sm:p-5" @click.self="closeProduct" @keydown="dialogKeydown">
+        <section ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="product-detail-title" aria-describedby="product-detail-description" class="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
+          <div class="flex items-start justify-between gap-4 px-5 pb-4 pt-5 sm:px-7 sm:pt-7">
+            <div class="min-w-0">
+              <span class="inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide" :class="categoryAppearance(selectedProduct.category).badge">{{ selectedProduct.category }}</span>
+              <h2 id="product-detail-title" class="mt-3 text-2xl font-black leading-tight text-slate-950 sm:text-3xl">{{ selectedProduct.name }}</h2>
+            </div>
+            <button ref="closeButton" type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-2xl text-slate-700 hover:bg-stone-100 focus:outline-none focus:ring-2 focus:ring-emerald-600" aria-label="Close product details" @click="closeProduct">&times;</button>
+          </div>
+          <div class="relative h-64 overflow-hidden sm:h-80" :class="categoryAppearance(selectedProduct.category).background">
+            <ProductPhotoCarousel :key="`${selectedProduct.category}:${selectedProduct.name}`" :images="selectedProduct.images ?? []" :product-name="selectedProduct.name" :fallback-icon="selectedProduct.icon || categoryAppearance(selectedProduct.category).symbol" />
+          </div>
+          <div class="px-5 pb-7 pt-5 sm:px-7">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <span class="text-3xl font-black tracking-tight text-emerald-950">{{ formatCurrency(selectedProduct.price) }}</span>
+              <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />In stock</span>
+            </div>
+            <p id="product-detail-description" class="mt-5 text-sm leading-6 text-slate-600">Interested in this product? Send {{ VIBER_CONTACT }} the name and quantity you want. Please wait for confirmation before paying.</p>
+            <div class="mt-5 flex flex-col gap-3 rounded-2xl bg-violet-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-violet-700">Order on Viber</p>
+                <p class="mt-1 select-all text-lg font-black text-slate-950">{{ VIBER_NUMBER }}</p>
+              </div>
+              <button type="button" class="rounded-xl bg-violet-700 px-4 py-3 text-sm font-bold text-white hover:bg-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-500" @click="copyViberNumber">{{ copyStatus === 'copied' ? 'Number copied' : 'Copy number' }}</button>
+            </div>
+            <p v-if="copyStatus === 'error'" class="mt-3 text-xs text-rose-700" role="status">Couldn’t copy automatically. Please select the number above.</p>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>

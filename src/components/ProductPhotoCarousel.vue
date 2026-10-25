@@ -36,8 +36,8 @@ function finishSwipe(event: TouchEvent): void {
     <img v-if="activeImage" :key="activeImage.id" :src="activeImage.url" :alt="`${productName}, photo ${activeIndex + 1} of ${availableImages.length}`" loading="lazy" decoding="async" class="h-full w-full object-cover" @error="imageFailed(activeImage.id)" />
     <span v-else class="relative text-6xl transition duration-200 group-hover:scale-110" aria-hidden="true">{{ fallbackIcon }}</span>
     <template v-if="availableImages.length > 1">
-      <button type="button" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-xl font-bold text-slate-900 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" :aria-label="`Previous photo of ${productName}`" @click="step(-1)">‹</button>
-      <button type="button" class="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-xl font-bold text-slate-900 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" :aria-label="`Next photo of ${productName}`" @click="step(1)">›</button>
+      <button type="button" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-xl font-bold text-slate-900 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" :aria-label="`Previous photo of ${productName}`" @click.stop="step(-1)">‹</button>
+      <button type="button" class="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-xl font-bold text-slate-900 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" :aria-label="`Next photo of ${productName}`" @click.stop="step(1)">›</button>
       <span class="absolute bottom-2 right-2 rounded-full bg-slate-950/75 px-2.5 py-1 text-[0.7rem] font-semibold text-white" aria-live="polite">{{ activeIndex + 1 }} / {{ availableImages.length }}</span>
     </template>
   </div>

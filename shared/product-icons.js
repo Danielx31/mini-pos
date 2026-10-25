@@ -11,7 +11,7 @@ export const PRODUCT_ICONS = Object.freeze([
   { value: "🧃", label: "Juice" },
   { value: "🍎", label: "Fruit" },
   { value: "🛒", label: "Groceries" },
-  { value: "🎒", label: "Accessories" }
+  { value: "👜", label: "Accessories" }
 ]);
 
 export const PRODUCT_ICON_VALUES = new Set(PRODUCT_ICONS.map((icon) => icon.value));
