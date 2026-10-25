@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "../stores/pos";
 import { useCouponsStore } from "../stores/coupons";
 import { usePaymentStore } from "../stores/payment";
@@ -9,6 +9,8 @@ import { lineTotal } from "../../shared/money.js";
 import AppNavbar from "../components/AppNavbar.vue";
 import PaymentModal from "../components/PaymentModal.vue";
 import ReceiptView from "../components/ReceiptView.vue";
+
+const PhoneBarcodeScanner = defineAsyncComponent(() => import("../components/PhoneBarcodeScanner.vue"));
 
 const posStore = usePosStore();
 const couponsStore = useCouponsStore();
@@ -20,6 +22,7 @@ const checkoutNotice = ref(null);
 const barcodeInput = ref("");
 const barcodeInputElement = ref(null);
 const barcodeNotice = ref(null);
+const showPhoneScanner = ref(false);
 const BARCODE_IDLE_MS = 450;
 let barcodeTimer = null;
 const parkedCustomerLabel = ref("");
@@ -44,8 +47,20 @@ function handleBarcodeSubmit() {
   const result = posStore.addToCartByBarcode(barcodeInput.value);
   barcodeInput.value = "";
   barcodeNotice.value = result;
-  if (result.ok) checkoutNotice.value = null;
+  if (result.ok) {
+    checkoutNotice.value = null;
+    showPhoneScanner.value = false;
+  }
   barcodeInputElement.value?.focus({ preventScroll: true });
+}
+
+function handleCameraDetected(code) {
+  const result = posStore.addToCartByBarcode(code);
+  barcodeNotice.value = result;
+  if (result.ok) {
+    checkoutNotice.value = null;
+    showPhoneScanner.value = false;
+  }
 }
 
 watch(barcodeInput, (code) => {
@@ -62,6 +77,9 @@ watch(barcodeInput, (code) => {
     const couldBeLongerCode = productCodes.some((value) => value.length > normalized.length && value.startsWith(normalized));
     if (exactMatch && !couldBeLongerCode && barcodeInput.value.trim() === code.trim()) handleBarcodeSubmit();
   }, BARCODE_IDLE_MS);
+});
+watch(() => posStore.isHoldPending, (pending) => {
+  if (pending) showPhoneScanner.value = false;
 });
 
 onMounted(() => {
@@ -83,6 +101,7 @@ function increaseQuantity(item) {
 }
 
 async function checkoutSale() {
+  showPhoneScanner.value = false;
   const result = await posStore.initiateCheckout();
   
   if (!result.ok) {
@@ -247,8 +266,12 @@ function handlePrint() {
             </div>
           </div>
 
-          <p class="-mt-3 mb-4 text-xs text-slate-500">Matching barcodes add automatically. Press Enter or Add to check a code manually.</p>
+          <div class="-mt-3 mb-4 flex flex-wrap items-center gap-3">
+            <p class="text-xs text-slate-500">Matching barcodes add automatically. Press Enter or Add to check a code manually.</p>
+            <button type="button" :disabled="posStore.isHoldPending" :aria-expanded="showPhoneScanner" aria-controls="phone-barcode-scanner" class="inline-flex min-h-11 items-center rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50" @click="showPhoneScanner = !showPhoneScanner">{{ showPhoneScanner ? 'Hide camera scanner' : 'Scan with phone camera' }}</button>
+          </div>
           <p v-if="barcodeNotice" role="status" aria-live="polite" class="mb-4 rounded-2xl border px-4 py-2 text-sm" :class="barcodeNotice.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-700'">{{ barcodeNotice.message }}</p>
+          <PhoneBarcodeScanner v-if="showPhoneScanner" @detected="handleCameraDetected" @close="showPhoneScanner = false" />
 
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <article v-for="product in posStore.filteredProducts" :key="product.id" class="group rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg">

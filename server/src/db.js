@@ -102,10 +102,14 @@ export async function initializeDatabase(db) {
       CREATE TABLE IF NOT EXISTS product_images (
         id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
         mime_type TEXT NOT NULL CHECK(mime_type IN ('image/jpeg','image/png','image/webp')),
-        image_base64 TEXT NOT NULL, image_hash TEXT NOT NULL,
+        image_data BYTEA, image_base64 TEXT NOT NULL, image_hash TEXT,
         byte_size INTEGER NOT NULL CHECK(byte_size > 0),
         uploaded_at TEXT NOT NULL, uploaded_by TEXT NOT NULL REFERENCES users(id)
       );
+      ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_data BYTEA;
+      ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_base64 TEXT;
+      ALTER TABLE product_images ADD COLUMN IF NOT EXISTS image_hash TEXT;
+      ALTER TABLE product_images ALTER COLUMN image_data DROP NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id,uploaded_at,id);
       CREATE TABLE IF NOT EXISTS product_delete_requests (
         id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), product_name TEXT NOT NULL,

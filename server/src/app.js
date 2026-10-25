@@ -453,12 +453,12 @@ export function createApp(db, options = {}) {
   });
   app.get("/api/v1/product-images/:imageId", async (req, res, next) => {
     try {
-      const image = await db.prepare(`SELECT images.image_base64,images.mime_type FROM product_images AS images
+      const image = await db.prepare(`SELECT images.image_data,images.image_base64,images.mime_type FROM product_images AS images
         JOIN products ON products.id=images.product_id WHERE images.id=? AND products.active=1`).get(req.params.imageId);
       if (!image) throw new ApiError(404, "Product image not found.");
       res.set("Content-Type", image.mime_type);
       res.set("Cache-Control", "public, max-age=300");
-      res.send(Buffer.from(image.image_base64, "base64"));
+      res.send(image.image_data ?? Buffer.from(image.image_base64, "base64"));
     } catch (error) { next(error); }
   });
   app.post("/api/v1/products/:id/images", auth, manager, async (req, res, next) => {
@@ -472,9 +472,10 @@ export function createApp(db, options = {}) {
       requireValid(bytes.length > 0 && bytes.length <= MAX_PRODUCT_IMAGE_BYTES && validProductImage(bytes, mimeType), "Image data does not match its type or exceeds 2 MB.");
       const imageHash = createHash("sha256").update(bytes).digest("hex");
       const result = await db.transaction(async () => {
-        const previous = await db.prepare("SELECT product_id,mime_type,image_hash FROM product_images WHERE id=?").get(imageKey);
+        const previous = await db.prepare("SELECT product_id,mime_type,image_data,image_base64,image_hash FROM product_images WHERE id=?").get(imageKey);
         if (previous) {
-          if (previous.product_id !== req.params.id || previous.mime_type !== mimeType || previous.image_hash !== imageHash) throw new ApiError(409, "Image request ID was already used for another upload.");
+          const previousHash = previous.image_hash ?? createHash("sha256").update(previous.image_data ?? Buffer.from(previous.image_base64, "base64")).digest("hex");
+          if (previous.product_id !== req.params.id || previous.mime_type !== mimeType || previousHash !== imageHash) throw new ApiError(409, "Image request ID was already used for another upload.");
           return { duplicate: true };
         }
         const product = await db.prepare("SELECT id FROM products WHERE id=? AND active=1").get(req.params.id);
