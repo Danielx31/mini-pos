@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 
 type ProductImage = { id: string; url: string };
-const props = defineProps<{ images: ProductImage[]; productName: string; fallbackIcon: string }>();
+const props = defineProps<{ images: ProductImage[]; productName: string; fallbackIcon: string; imageFit?: "cover" | "contain" }>();
 
 const activeIndex = ref(0);
 const failedIds = ref<Set<string>>(new Set());
@@ -33,7 +33,7 @@ function finishSwipe(event: TouchEvent): void {
 
 <template>
   <div class="relative flex h-full w-full items-center justify-center overflow-hidden" @touchstart.passive="touchStartX = $event.touches[0]?.clientX ?? 0" @touchend.passive="finishSwipe">
-    <img v-if="activeImage" :key="activeImage.id" :src="activeImage.url" :alt="`${productName}, photo ${activeIndex + 1} of ${availableImages.length}`" loading="lazy" decoding="async" class="h-full w-full object-cover" @error="imageFailed(activeImage.id)" />
+    <img v-if="activeImage" :key="activeImage.id" :src="activeImage.url" :alt="`${productName}, photo ${activeIndex + 1} of ${availableImages.length}`" loading="lazy" decoding="async" class="h-full w-full" :class="imageFit === 'contain' ? 'object-contain' : 'object-cover'" @error="imageFailed(activeImage.id)" />
     <span v-else class="relative text-6xl transition duration-200 group-hover:scale-110" aria-hidden="true">{{ fallbackIcon }}</span>
     <template v-if="availableImages.length > 1">
       <button type="button" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-xl font-bold text-slate-900 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" :aria-label="`Previous photo of ${productName}`" @click.stop="step(-1)">‹</button>

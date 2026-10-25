@@ -283,8 +283,8 @@ onMounted(loadMenu);
             </div>
             <button ref="closeButton" type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-2xl text-slate-700 hover:bg-stone-100 focus:outline-none focus:ring-2 focus:ring-emerald-600" aria-label="Close product details" @click="closeProduct">&times;</button>
           </div>
-          <div class="relative h-64 overflow-hidden sm:h-80" :class="categoryAppearance(selectedProduct.category).background">
-            <ProductPhotoCarousel :key="`${selectedProduct.category}:${selectedProduct.name}`" :images="selectedProduct.images ?? []" :product-name="selectedProduct.name" :fallback-icon="selectedProduct.icon || categoryAppearance(selectedProduct.category).symbol" />
+          <div class="relative h-[min(50dvh,30rem)] min-h-64 overflow-hidden bg-stone-100" :class="selectedProduct.images?.length ? '' : categoryAppearance(selectedProduct.category).background">
+            <ProductPhotoCarousel :key="`${selectedProduct.category}:${selectedProduct.name}`" :images="selectedProduct.images ?? []" :product-name="selectedProduct.name" :fallback-icon="selectedProduct.icon || categoryAppearance(selectedProduct.category).symbol" image-fit="contain" />
           </div>
           <div class="px-5 pb-7 pt-5 sm:px-7">
             <div class="flex flex-wrap items-center justify-between gap-3">
