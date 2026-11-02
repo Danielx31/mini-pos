@@ -239,6 +239,21 @@ async function readOrders(db, archived = 0) {
   });
 }
 
+async function readReportOrders(db) {
+  const rows = await db.prepare("SELECT payload_json,refunded,archived FROM orders ORDER BY created_at DESC").all();
+  return rows.map((row) => {
+    const order = JSON.parse(row.payload_json);
+    return {
+      orderNumber: order.orderNumber,
+      checkedOutAt: order.checkedOutAt,
+      total: order.total,
+      items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price, subtotal: item.subtotal })),
+      refunded: Boolean(row.refunded),
+      archived: Boolean(row.archived),
+    };
+  });
+}
+
 async function readHolds(db) {
   return (await db.prepare("SELECT payload_json FROM holds WHERE recalled=0 ORDER BY created_at DESC").all()).map((row) => JSON.parse(row.payload_json));
 }
@@ -388,6 +403,10 @@ export function createApp(db, options = {}) {
   });
 
   app.get("/api/v1/bootstrap", auth, async (_req, res) => res.json({ products: await readProducts(db), coupons: await readCoupons(db), taxRates: await readTaxRates(db), orders: await readOrders(db), parkedOrders: await readHolds(db) }));
+  app.get("/api/v1/reports/orders", auth, manager, async (_req, res, next) => {
+    try { res.json(await readReportOrders(db)); }
+    catch (error) { next(error); }
+  });
   app.get("/api/v1/coupons", auth, manager, async (_req, res, next) => {
     try { res.json(await readCoupons(db)); }
     catch (error) { next(error); }

@@ -2,6 +2,7 @@
 import { onUnmounted, ref } from "vue";
 import { BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 
+defineProps<{ purpose?: "checkout" | "product" }>();
 const emit = defineEmits<{ detected: [code: string]; close: [] }>();
 const video = ref<HTMLVideoElement | null>(null);
 const state = ref<"idle" | "starting" | "scanning" | "paused">("idle");
@@ -81,7 +82,7 @@ onUnmounted(stopCamera);
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h3 id="phone-scanner-heading" class="font-semibold text-slate-950">Scan with your phone camera</h3>
-        <p class="mt-1 text-sm text-slate-600">Point the rear camera at a product barcode. One successful scan adds one item to the cart.</p>
+        <p class="mt-1 text-sm text-slate-600">{{ purpose === 'product' ? 'Point the rear camera at the product barcode. A successful scan fills the Barcode / SKU field.' : 'Point the rear camera at a product barcode. One successful scan adds one item to the cart.' }}</p>
       </div>
       <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" @click="close">Close camera</button>
     </div>
@@ -98,6 +99,6 @@ onUnmounted(stopCamera);
       <span v-if="state === 'scanning'" class="text-sm text-slate-600" role="status">Looking for a barcode...</span>
     </div>
     <p v-if="errorMessage" role="alert" class="mt-3 text-sm text-rose-800">{{ errorMessage }}</p>
-    <p class="mt-3 text-xs text-slate-600">The barcode must match a product's Barcode / SKU in Products. Camera video stays on this device.</p>
+    <p class="mt-3 text-xs text-slate-600">{{ purpose === 'product' ? 'Review the scanned SKU before saving. Camera video stays on this device.' : "The barcode must match a product's Barcode / SKU in Products. Camera video stays on this device." }}</p>
   </section>
 </template>

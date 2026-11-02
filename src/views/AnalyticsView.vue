@@ -1,12 +1,24 @@
-<script setup>
-import { computed, ref } from "vue";
-import { useOrdersStore } from "../stores/orders";
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
 import { useCurrency } from "../composables/useFormatters";
 import { useAnalytics } from "../composables/useAnalytics";
+import { api } from "../lib/api";
 import AppNavbar from "../components/AppNavbar.vue";
 import ChartComponent from "../components/ChartComponent.vue";
 
-const ordersStore = useOrdersStore();
+type ReportOrder = {
+  orderNumber: string;
+  checkedOutAt: string;
+  total: number;
+  items: { name: string; quantity: number; price: number; subtotal?: number }[];
+  refunded: boolean;
+  archived: boolean;
+};
+
+const reportOrders = ref<ReportOrder[]>([]);
+const isLoading = ref(true);
+const reportError = ref("");
+let requestInFlight = false;
 const { formatCurrency } = useCurrency();
 const {
   dailyRevenue,
@@ -15,9 +27,9 @@ const {
   topSellingProducts,
   peakHours,
   analytics,
-} = useAnalytics(() => ordersStore.orders);
+} = useAnalytics(() => reportOrders.value);
 
-const revenueChartType = ref("daily"); // 'daily', 'weekly', 'monthly'
+const revenueChartType = ref<"daily" | "weekly" | "monthly">("daily");
 
 const revenueData = computed(() => {
   switch (revenueChartType.value) {
@@ -30,9 +42,29 @@ const revenueData = computed(() => {
   }
 });
 
-function switchRevenueChartType(type) {
+function switchRevenueChartType(type: "daily" | "weekly" | "monthly") {
   revenueChartType.value = type;
 }
+
+async function loadReport(): Promise<void> {
+  if (requestInFlight) return;
+  requestInFlight = true;
+  isLoading.value = true;
+  reportError.value = "";
+  try {
+    const result = await api("/reports/orders");
+    if (!Array.isArray(result)) throw new Error("The sales report is unavailable right now.");
+    reportOrders.value = result as ReportOrder[];
+  } catch (error) {
+    reportOrders.value = [];
+    reportError.value = error instanceof Error ? error.message : "The sales report is unavailable right now.";
+  } finally {
+    requestInFlight = false;
+    isLoading.value = false;
+  }
+}
+
+onMounted(loadReport);
 </script>
 
 <template>
@@ -41,12 +73,22 @@ function switchRevenueChartType(type) {
 
     <main class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
       <!-- Header -->
-      <div class="mb-8">
-        <h1 class="text-4xl font-bold text-white mb-2">Sales Analytics</h1>
-        <p class="text-slate-400">
-          Refunded orders are excluded from these sales totals. Card and e-wallet methods have not been verified with a payment provider.
-        </p>
+      <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-4xl font-bold text-white mb-2">Sales Analytics</h1>
+          <p class="text-slate-400">
+            Archived sales remain in these reports. Refunded orders are excluded. Card and e-wallet methods have not been verified with a payment provider.
+          </p>
+        </div>
+        <button type="button" :disabled="isLoading" class="rounded-xl border border-slate-500 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-wait disabled:opacity-50" @click="loadReport">{{ isLoading ? 'Loading…' : 'Refresh report' }}</button>
       </div>
+
+      <p v-if="isLoading" class="rounded-xl border border-slate-700 bg-slate-800 p-6 text-slate-200" role="status">Loading sales report…</p>
+      <div v-else-if="reportError" class="rounded-xl border border-rose-500/40 bg-rose-950/40 p-6 text-rose-100" role="alert">
+        <p>{{ reportError }}</p>
+        <button type="button" class="mt-4 rounded-lg bg-rose-100 px-4 py-2 text-sm font-semibold text-rose-950 hover:bg-white focus:outline-none focus:ring-2 focus:ring-white" @click="loadReport">Try again</button>
+      </div>
+      <template v-else>
 
       <!-- Summary Cards -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -299,6 +341,7 @@ function switchRevenueChartType(type) {
           Complete some sales transactions to see analytics here
         </p>
       </div>
+      </template>
     </main>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from "vue";
 import { useProductsStore } from "../stores/products";
 import { useAuthStore } from "../stores/auth";
 import { useTaxStore } from "../stores/taxes";
@@ -8,6 +8,8 @@ import { formatTaxRate } from "../constants/taxes";
 import AppNavbar from "../components/AppNavbar.vue";
 import ProductImagesManager from "../components/ProductImagesManager.vue";
 import { PRODUCT_ICONS } from "../../shared/product-icons.js";
+
+const PhoneBarcodeScanner = defineAsyncComponent(() => import("../components/PhoneBarcodeScanner.vue"));
 
 const productsStore = useProductsStore();
 const authStore = useAuthStore();
@@ -37,6 +39,9 @@ const formName = ref("");
 const formCategory = ref("");
 const formIcon = ref(null);
 const formSku = ref("");
+const skuInput = ref(null);
+const showSkuScanner = ref(false);
+const skuScanNotice = ref(null);
 const formPrice = ref("");
 const formStock = ref("");
 const formLowStockThreshold = ref("");
@@ -77,6 +82,8 @@ function resetForm() {
   formCategory.value = "";
   formIcon.value = null;
   formSku.value = "";
+  showSkuScanner.value = false;
+  skuScanNotice.value = null;
   formPrice.value = "";
   formStock.value = "";
   formLowStockThreshold.value = "";
@@ -90,6 +97,8 @@ function openAddForm() {
 }
 
 function openEditForm(product) {
+  showSkuScanner.value = false;
+  skuScanNotice.value = null;
   formName.value = product.name;
   formCategory.value = product.category;
   formIcon.value = product.icon ?? null;
@@ -99,6 +108,28 @@ function openEditForm(product) {
   formLowStockThreshold.value = String(product.lowStockThreshold || 0);
   editingProductId.value = product.id;
   showAddForm.value = false;
+}
+
+async function handleSkuDetected(code) {
+  const scannedSku = code.trim();
+  if (scannedSku.length > 80) {
+    skuScanNotice.value = { ok: false, message: "This barcode is longer than the 80-character SKU limit. Scan another barcode or enter a shorter SKU." };
+    return;
+  }
+  const normalized = scannedSku.toLowerCase();
+  const existingProduct = productsStore.products.find((product) =>
+    product.id !== editingProductId.value && (product.id.toLowerCase() === normalized || product.sku?.toLowerCase() === normalized)
+  );
+  if (existingProduct) {
+    skuScanNotice.value = { ok: false, message: `This barcode already identifies ${existingProduct.name}. Scan another barcode or enter a different SKU.` };
+    return;
+  }
+
+  formSku.value = scannedSku;
+  showSkuScanner.value = false;
+  skuScanNotice.value = { ok: true, message: "Barcode scanned. Review the SKU and save the product." };
+  await nextTick();
+  skuInput.value?.focus();
 }
 
 async function openImages(product) {
@@ -331,8 +362,11 @@ async function resetTaxRates() {
           </div>
           <div>
             <label for="productSku" class="mb-1 block text-sm font-medium text-slate-700">Barcode / SKU</label>
-            <input id="productSku" v-model="formSku" type="text" placeholder="e.g. 10010001" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            <input id="productSku" ref="skuInput" v-model="formSku" type="text" maxlength="80" placeholder="e.g. 10010001" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" @input="skuScanNotice = null" />
+            <button type="button" :aria-expanded="showSkuScanner" aria-controls="phone-barcode-scanner" class="mt-2 w-full rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 transition-colors hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500" @click="showSkuScanner = !showSkuScanner; skuScanNotice = null">{{ showSkuScanner ? 'Hide camera scanner' : 'Scan with camera' }}</button>
+            <p v-if="skuScanNotice" role="status" class="mt-2 text-xs" :class="skuScanNotice.ok ? 'text-emerald-700' : 'text-rose-700'">{{ skuScanNotice.message }}</p>
           </div>
+          <PhoneBarcodeScanner v-if="showSkuScanner" purpose="product" class="sm:col-span-5" @detected="handleSkuDetected" @close="showSkuScanner = false" />
           <div>
             <label for="productPrice" class="mb-1 block text-sm font-medium text-slate-700">Price (₱)</label>
             <input id="productPrice" v-model="formPrice" type="number" step="0.01" min="0" required placeholder="0.00" class="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
