@@ -8,6 +8,7 @@ import { formatTaxRate } from "../constants/taxes";
 import AppNavbar from "../components/AppNavbar.vue";
 import ProductImagesManager from "../components/ProductImagesManager.vue";
 import { PRODUCT_ICONS } from "../../shared/product-icons.js";
+import { fromCents, toCents } from "../../shared/money.js";
 
 const PhoneBarcodeScanner = defineAsyncComponent(() => import("../components/PhoneBarcodeScanner.vue"));
 
@@ -59,6 +60,13 @@ const filteredProducts = computed(() => {
   );
 });
 const pendingRemovalIds = computed(() => new Set(productsStore.deletionRequests.map((request) => request.productId)));
+const possibleSalesTotal = computed(() => fromCents(
+  productsStore.products.reduce((total, product) => total + toCents(product.price) * product.stock, 0),
+));
+
+function possibleSalesFor(product) {
+  return fromCents(toCents(product.price) * product.stock);
+}
 
 onMounted(async () => {
   const [requests, disposals] = await Promise.all([productsStore.loadDeletionRequests(), productsStore.loadStockDisposals()]);
@@ -250,10 +258,15 @@ async function resetTaxRates() {
     <AppNavbar show-back />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-6">
+      <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm font-medium text-slate-500">Total Products</p>
           <p class="mt-1 text-2xl font-bold text-slate-900">{{ productsStore.totalProducts }}</p>
+        </div>
+        <div class="rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+          <p class="text-sm font-medium text-emerald-800">Possible Sales</p>
+          <p class="mt-1 break-words text-2xl font-bold text-emerald-950">{{ formatCurrency(possibleSalesTotal) }}</p>
+          <p class="mt-2 text-xs text-emerald-800">All current stock × listed price, before discounts and tax.</p>
         </div>
         <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm font-medium text-slate-500">Categories</p>
@@ -476,6 +489,7 @@ async function resetTaxRates() {
               <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
               <th class="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Price</th>
               <th class="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Stock</th>
+              <th class="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Possible Sales</th>
               <th class="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
             </tr>
           </thead>
@@ -499,6 +513,7 @@ async function resetTaxRates() {
                   <span v-if="(product.stock || 0) <= (product.lowStockThreshold || 0)" class="ml-1">!</span>
                 </span>
               </td>
+              <td class="whitespace-nowrap px-5 py-3 text-right font-semibold text-emerald-800">{{ formatCurrency(possibleSalesFor(product)) }}</td>
               <td class="px-5 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors" @click="openEditForm(product)">Edit</button>
